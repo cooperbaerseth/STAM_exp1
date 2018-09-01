@@ -83,4 +83,4 @@ for i in range(0, x_train.shape[0]):     #over all instances in training set (60
 
 
 raw_input('Press Enter to exit')
-print("done")
+print("donezo")
