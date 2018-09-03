@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 from keras.datasets import mnist
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,6 +14,29 @@ def accuracy_eval(progress):
             correct = correct + 1
 
     return correct/progress
+
+def accuracy_eval_perDigit(progress):
+    accu = np.zeros((3, 10))    #1st row: # correct (per class)
+                                #2nd row: # seen (per class)
+                                #3rd row: accuracy (per class)
+                                #class indexed by position
+    #get correct / total
+    for i in range(0,progress):
+        accu[1, y_train[i]] = accu[1, y_train[i]] + 1.0
+        if x_clusterInd[i] == y_train[i]:
+            accu[0, y_train[i]] = accu[0, y_train[i]] + 1.0
+
+    #get accuracy per class
+    for i in range(0, 10):
+        accu[2,i] = accu[0,i] / accu[1,i]
+
+    #print accuracy per class
+    print("Per Class Accuracy: ")
+    for i in range(0, 10):
+        print(str(i) + ": " + str(round(accu[2,i], 3)) + "\t\t", end='')
+    print("\n\n")
+
+    return
 
 def showCentroids(centroids):
     for i in range(0,len(centroids[0,:]-1)):
@@ -43,7 +68,7 @@ for i in range(0,10):
     centroidIndexs[i] = j
     x_clusterInd[j] = -1    #-1 indicates it is a centroid, not to be used in training
 
-    print "index: " + str(j) + "\n digit: " + str(y_train[j])
+    print("index: " + str(j) + "\n digit: " + str(y_train[j]))
 
 plt.figure(1)
 showCentroids(centroids)
@@ -64,16 +89,21 @@ for i in range(0, x_train.shape[0]):     #over all instances in training set (60
             x_clusterInd[i] = j
 
     #adjust centroid according to instance
-    centroids[:, x_clusterInd[i]] = centroids[:, x_clusterInd[i]] + (alpha*xi)
-    #entroids[:, x_clusterInd[i]] = (1-alpha) * centroids[:, x_clusterInd[i]] + (alpha * xi)
+    #centroids[:, x_clusterInd[i]] = centroids[:, x_clusterInd[i]] + (alpha*xi)
+    centroids[:, x_clusterInd[i]] = (1-alpha) * centroids[:, x_clusterInd[i]] + (alpha * xi)
 
     #evaluate accuracy occasionally
     if i % 500 == 0:
         accu = accuracy_eval(i)
-        print "Accuracy: " + str(accu*100) + "%"
+        print("Overall Accuracy: " + str(round(accu*100, 3)) + "%")
+        accuracy_eval_perDigit(i)
 
-        plt.figure(2)
-        showCentroids(centroids)
+        #plt.figure(2)
+        #showCentroids(centroids)
+
+
+plt.figure(3)
+showCentroids(centroids)
 
 
 
