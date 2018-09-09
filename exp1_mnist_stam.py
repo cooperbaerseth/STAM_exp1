@@ -97,28 +97,63 @@ def initCents_rands_alt():
             filled = filled + 1
     return
 
-def initCents_avg(n):
-    avgCents = np.zeros((28*28, 10, n))
-    avgCents_ind = np.full((10, n), -1)
+def initCents_avg(n):                   #if n = float("inf"), average all examples together
+    global centroids
 
-    #fill the matrix in order to average
-    for i in range(0, n):
-        filled = 0
-        while filled != 10:
-            pick = random.randint(0, y_train.size-1)
-            if avgCents_ind[y_train[pick], i] == -1 and pick not in avgCents_ind:
-                avgCents[:, y_train[pick], i] = x_train[pick].flatten()
-                avgCents_ind[y_train[pick], i] = pick
-                filled = filled + 1
+    if n == float("inf"):
+        avgCents_full = np.zeros((28*28, 10))
+        cent_count = np.zeros(10)
 
-    #average by 3rd dimension
-    temp = avgCents.mean(axis=2)
-    for i in range(0,10):
-        centroids[:, i] = temp[:, i]
+        #sum
+        for i in range(0, x_train.shape[0]):
+            avgCents_full[:, y_train[i]] = avgCents_full[:, y_train[i]] + x_train[i].flatten()
+            cent_count[y_train[i]] = cent_count[y_train[i]] + 1
+
+        #divide
+        centroids = avgCents_full / cent_count[None, :]
+
+    else:
+        avgCents = np.zeros((28 * 28, 10, n))
+        avgCents_ind = np.full((10, n), -1)
+
+        #fill the matrix in order to average
+        for i in range(0, n):
+            filled = 0
+            while filled != 10:
+                pick = random.randint(0, y_train.size-1)
+                if avgCents_ind[y_train[pick], i] == -1 and pick not in avgCents_ind:
+                    avgCents[:, y_train[pick], i] = x_train[pick].flatten()
+                    avgCents_ind[y_train[pick], i] = pick
+                    filled = filled + 1
+
+        #average by 3rd dimension
+        temp = avgCents.mean(axis=2)
+        for i in range(0,10):
+            centroids[:, i] = temp[:, i]
+    return
+
+def initCents_close2avg():
+    global centroids
+
+    temp_cents = np.zeros(centroids.shape)
+    best_dists = np.full((10, 1), float("inf"))
+
+    #populate centroids with averages of all instances in training set
+    initCents_avg(float("inf"))
+
+    #pick instances that are closest to global averages per class
+    for i in range(0, x_train.shape[0]):
+        xi = x_train[i].flatten()
+        if np.linalg.norm(xi - centroids[:, y_train[i]]) < best_dists[y_train[i]]:
+            temp_cents[:, y_train[i]] = xi
+            best_dists[y_train[i]] = np.linalg.norm(xi - centroids[:, y_train[i]])
+            centroidIndexs[y_train[i]] = i
+
+    centroids = temp_cents
 
     return
 
-alpha = 0.05
+alpha = 0.005
 
 #load mnist
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
@@ -137,7 +172,11 @@ x_clusterInd = np.zeros(x_train.shape[0]).astype(int)
 #initCents_rands_alt()
 
 #average of n examples
-initCents_avg(3)
+#initCents_avg(3)
+#initCents_avg(float("inf"))
+
+#closest to global average
+initCents_close2avg()
 
 plt.figure(1)
 showCentroids(centroids)
