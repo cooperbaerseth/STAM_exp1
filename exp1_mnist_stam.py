@@ -4,6 +4,9 @@ import random
 from keras.datasets import mnist
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sn
+import pandas as pd
+
 
 plt.interactive(True)
 
@@ -36,6 +39,50 @@ def accuracy_eval_perDigit(progress):
     for i in range(0, 10):
         print(str(i) + ": " + str(round(accu[2,i], 3)) + "\t\t", end='')
     print("\n\n")
+
+    #add to accuracy graph datapoints to plot later
+    accuGraph_points[progress/div - 1, :] = accu[2, :]
+
+    #show confusion matrix
+    conf_mat(progress)
+
+    return
+
+def show_AccuGraph():
+
+    fig = plt.figure(1)
+    ax = plt.subplot(111)
+
+    for i in range(0, 5):
+        ax.plot(np.arange(0, x_train.shape[0]-1, div), accuGraph_points[:, i], linewidth=2.0, label=str(i))
+    for i in range(5, 10):
+        ax.plot(np.arange(0, x_train.shape[0]-1, div), accuGraph_points[:, i], '--', linewidth=2.0, label=str(i))
+
+    plt.xlim(xmax=x_train.shape[0]+3000)
+    plt.title('Accuracy Per Class Over Time', fontweight='bold', fontsize=20)
+    plt.ylabel('Accuracy', fontweight='bold')
+    plt.xlabel('Total Iterations', fontweight='bold')
+
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.95, box.height])
+    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+
+    plt.show(fig)
+    return
+
+def conf_mat(n):
+    confMat = np.zeros((10, 10))      #holds the values of the confusion matrix
+
+    #populate the matrix
+    for i in range(0, n):
+        confMat[x_clusterInd[i], y_train[i]] = confMat[x_clusterInd[i], y_train[i]] + 1
+
+    #show confusion matrix
+    confMat_dFrame = pd.DataFrame(confMat, range(confMat.shape[0]), range(confMat.shape[1]))
+    fig = plt.figure(2)
+    fig.clear()
+    plt.title("True Labels", fontweight='bold')
+    sn.heatmap(confMat_dFrame, annot=True, fmt='g')
 
     return
 
@@ -154,12 +201,14 @@ def initCents_close2avg():
     return
 
 alpha = 0.005
+div = 1000
 
 #load mnist
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
 centroids = np.zeros((28*28, 10))
 centroidIndexs = np.full((10, 1), -1)
 x_clusterInd = np.zeros(x_train.shape[0]).astype(int)
+accuGraph_points = np.zeros((x_train.shape[0]/div, 10))       #will hold all the datapoints over time for the accuracy of each class
 
 
 ###INITIALIZE CENTROIDS
@@ -169,16 +218,16 @@ x_clusterInd = np.zeros(x_train.shape[0]).astype(int)
 
 #random of each class
 #initCents_pickRands()
-#initCents_rands_alt()
+initCents_rands_alt()
 
 #average of n examples
 #initCents_avg(3)
 #initCents_avg(float("inf"))
 
 #closest to global average
-initCents_close2avg()
+#initCents_close2avg()
 
-plt.figure(1)
+plt.figure(3)
 showCentroids(centroids)
 
 #cluster
@@ -201,21 +250,21 @@ for i in range(0, x_train.shape[0]):     #over all instances in training set (60
     centroids[:, x_clusterInd[i]] = (1-alpha) * centroids[:, x_clusterInd[i]] + (alpha * xi)
 
     #evaluate accuracy occasionally
-    if i % 500 == 0 and i != 0:
+    if (i+1) % div == 0:
         accu = accuracy_eval(i)
         print("Overall Accuracy: " + str(round(accu*100, 3)) + "%")
         accuracy_eval_perDigit(i)
 
-        plt.figure(2)
+        plt.figure(4)
         showCentroids(centroids)
         #raw_input('Press Enter to exit')
 
 
-plt.figure(3)
+plt.figure(5)
 showCentroids(centroids)
 
 
-
+show_AccuGraph()
 
 
 
