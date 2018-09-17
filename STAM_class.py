@@ -11,6 +11,51 @@ import pandas as pd
 plt.interactive(True)
 
 
+#the STAM class
+
+class STAM_module:
+
+    #class variables shared by all instances go here
+
+    def __init__(self, field_size, num_clusts):
+        self.field_size = field_size
+        self.num_clusts = num_clusts
+
+        #allocate memory for instance input and clusters
+        self.input = np.zeros((self.field_size*self.field_size, 1))       #will hold the input of a STAM (AKA the image in the STAM's receptive field)
+        self.centroids = np.zeros((self.field_size*self.field_size, num_clusts))        #will hold the centroids corresponding to this STAM
+
+    def take_input(self, input):
+        self.input = input
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def accuracy_eval(progress):
     correct = 0.0
     for i in range(0, progress):
@@ -201,7 +246,7 @@ def initCents_close2avg():
     return
 
 alpha = 0.005
-div = 10000
+div = 1000
 
 #load mnist
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
