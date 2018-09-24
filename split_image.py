@@ -67,7 +67,7 @@ def visualize_recFields(recFields):
 for i in range(0, x_train.shape[0]):
     plt.figure(1)
     plt.imshow(x_train[i])
-    get_recFields(x_train[i], 5, 1)
+    get_recFields(x_train[i], 3, 2)
     plt.pause(0.005)
     plt.show()
     raw_input('Press Enter to exit')
