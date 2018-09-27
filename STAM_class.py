@@ -133,10 +133,12 @@ class Layer:
 
         #Set all STAMs' initial centroid states
         self.set_initCentroids()
-        self.visualize_recFields("centroid", 7)
+        #self.visualize_recFields("centroid", 7)        #demonstration of a centroid visualized
 
         #Give each STAM its input
         self.set_STAM_input()
+        plt.figure()
+        plt.imshow(self.input_image)
         self.visualize_recFields("input")
 
         #Create layer's output image
@@ -260,6 +262,7 @@ initCents_close2avg()
 showCentroids(centroids_initial)
 
 L1 = Layer(5, 2, alpha, centroids_initial)
+L2 = Layer(10, 2, alpha, centroids_initial)
 for i in range(x_train.shape[0]):
     L1.feed(x_train[i])
     plt.pause(0.005)
@@ -267,9 +270,10 @@ for i in range(x_train.shape[0]):
     raw_input('Press Enter to exit')
     plt.close('all')
 
+    L2.feed(L1.output_image)
+    plt.pause(0.005)
+    plt.show()
+    raw_input('Press Enter to exit')
+    plt.close('all')
 
-
-
-
-
-
+    print("Actual Class: " + str(y_train[i]))
