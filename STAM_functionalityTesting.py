@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sn
 import pandas as pd
+from collections import Counter
 
 
 plt.interactive(True)
@@ -97,17 +98,24 @@ class Layer:
             for j in range(0, int(np.sqrt(self.num_STAMs))):
                 self.STAMs[i][j].get_output()
 
+    def append_centContrib(self, istart, iend, jstart, jend, cent):
+        for i in range(istart, iend):
+            for j in range(jstart, jend):
+                self.pixel_centContrib[i][j].append(cent)
+
     def get_output(self):
         self.output_image = np.zeros(self.input_image.shape, dtype=float)
         count_image = np.zeros(self.input_image.shape)
+        self.pixel_centContrib = [[[] for i in range(self.input_image.shape[0])] for j in range(self.input_image.shape[0])]  # 2D list in which each element corresponds to a pixel in the output image
+                                                                                                                             #  and contains a list of the centroids that contributed to it's value
         stride = self.stride
         recField_size = self.recField_size
 
         # Run STAMs in layers (get STAM output)
         self.run_STAMs()
 
-        for i in range(0, int(np.sqrt(self.num_STAMs))):
-            for j in range(0, int(np.sqrt(self.num_STAMs))):
+        for i in range(int(np.sqrt(self.num_STAMs))):
+            for j in range(int(np.sqrt(self.num_STAMs))):
                 startI = i * stride
                 endI = i * stride + recField_size
                 startJ = j * stride
@@ -117,6 +125,7 @@ class Layer:
 
                 self.output_image[startI:endI][:, startJ:endJ] += self.STAMs[i][j].output
                 count_image[startI:endI][:, startJ:endJ] += 1
+                self.append_centContrib(startI, endI, startJ, endJ, self.STAMs[i][j].output_cent)
 
         self.output_image = np.round(self.output_image / count_image)
 
@@ -195,6 +204,44 @@ class Layer:
 
         return
 
+    def show_centroidContent(self, actual_cent, majority=False):
+        # This function creates a figure which shows the content of the layer's output image from the perspective of
+        #   which centroid was used by each STAM.
+        row_col = int(np.sqrt(self.num_STAMs))
+        STAM_centsImg = np.zeros((row_col, row_col))
+        correct_centImg = np.full(self.output_image.shape, float('inf'))
+
+
+        # This image shows which centroid was used by each STAM in the layer. Each cell corresponds to an individual STAM.
+        for i in range(row_col):
+            for j in range(row_col):
+                STAM_centsImg[i, j] = self.STAMs[i][j].output_cent
+
+        STAM_centsImg_df = pd.DataFrame(STAM_centsImg, range(STAM_centsImg.shape[0]), range(STAM_centsImg.shape[0]))
+        plt.figure()
+        sn.heatmap(STAM_centsImg_df, annot=True, fmt='g')
+
+        # This image highlights the pixels in the ouput image that used the 'correct' centroid. If using 'majority',
+        #   pixels are only highlighted if the correct centroid was used the most out of all that contributed to the
+        #   pixel value.
+        for i in range(len(self.pixel_centContrib)):
+            for j in range(len(self.pixel_centContrib[0])):
+                if majority == False:
+                    if actual_cent in self.pixel_centContrib[i][j]:
+                        correct_centImg[i][j] = self.output_image[i][j]
+                else:
+                    c = Counter(self.pixel_centContrib[i][j]).most_common()
+                    for k in range(len(c)):
+                        if c[k][1] == c[0][1]:
+                            if c[k][0] == actual_cent:
+                                correct_centImg[i][j] = self.output_image[i][j]
+                                break
+        plt.figure()
+        plt.imshow(correct_centImg)
+
+        plt.pause(0.005)
+        return
+
 #The STAM Class
 class STAM:
 
@@ -202,6 +249,7 @@ class STAM:
         self.rf_size = recField_size
         self.input = np.zeros((self.rf_size , self.rf_size ))
         self.output = np.zeros((self.rf_size , self.rf_size ))
+        self.output_cent = -1
         self.centroids = np.zeros((NUM_OF_CLUSTERS, self.rf_size , self.rf_size ))
         self.alpha = alpha
 
@@ -217,6 +265,7 @@ class STAM:
                 smallest = np.linalg.norm(self.input.flatten() - self.centroids[i, :, :].flatten())
                 close_ind = i
         self.output = self.centroids[close_ind]
+        self.output_cent = close_ind
         self.adjust_centroid(close_ind)
 
 
@@ -279,6 +328,7 @@ def initCents_close2avg():
     return
 
 def showCentroids(centroids):
+    plt.figure()
     for i in range(NUM_OF_CLUSTERS):
         plt.subplot(5, 2, i+1)
         plt.imshow(centroids[i, :])
@@ -287,7 +337,16 @@ def showCentroids(centroids):
     plt.show()
     return
 
+def feed_centroid(layer, cent=0):
+    cent = cent
+    layer.feed(centroids_initial[cent, :, :])
+    dist = np.linalg.norm(centroids_initial[cent, :, :].flatten() - layer.output_image.flatten())
+    diff_img = centroids_initial[cent, :, :] - layer.output_image
+    plt.figure()
+    plt.imshow(diff_img)
+    plt.title('Euclidean Distance = ' + str(dist))
 
+    return
 
 '''
 **********************
@@ -307,10 +366,25 @@ initCents_close2avg()
 
 
 # Test Layer output reconstruction
-L1 = Layer(4, 3, 0.005, centroids_initial)
-L1.test_output_construction(x_train[1])
+# L1 = Layer(4, 2, 0.005, centroids_initial)
+# L1.test_output_construction(x_train[1])
+
+# Test if centroids will be output as themselves
+#L1 = Layer(4, 2, 0.005, centroids_initial)
+#feed_centroid(L1, 8)
+
+# Show content of layer's output image with respect to STAM centroids
+L1 = Layer(4, 2, 0.005, centroids_initial)
+m = True
+for i in range(x_train.shape[0]):
+    L1.feed(x_train[i])
+    L1.show_centroidContent(y_train[i], m)
+    showCentroids(centroids_initial)
+    raw_input('Press Enter to exit')
+    plt.close('all')
 
 
-
-
-
+plt.pause(0.005)
+plt.show()
+print('done')
+raw_input('Press Enter to exit')
