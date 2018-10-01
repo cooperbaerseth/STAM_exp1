@@ -205,8 +205,8 @@ class Layer:
         return
 
     def show_centroidContent(self, actual_cent, majority=False):
-        # This function creates a figure which shows the content of the layer's output image from the perspective of
-        #   which centroid was used by each STAM.
+        # This function creates figures which attempt to make more obvious the centroids used by each STAM in the
+        #   layer's output image.
         row_col = int(np.sqrt(self.num_STAMs))
         STAM_centsImg = np.zeros((row_col, row_col))
         correct_centImg = np.full(self.output_image.shape, float('inf'))
@@ -221,8 +221,8 @@ class Layer:
         plt.figure()
         sn.heatmap(STAM_centsImg_df, annot=True, fmt='g')
 
-        # This image highlights the pixels in the ouput image that used the 'correct' centroid. If using 'majority',
-        #   pixels are only highlighted if the correct centroid was used the most out of all that contributed to the
+        # This image shows the pixels in the ouput image that used the 'correct' centroid. If using 'majority',
+        #   pixels are only shown if the correct centroid was used the most out of all that contributed to the
         #   pixel value.
         for i in range(len(self.pixel_centContrib)):
             for j in range(len(self.pixel_centContrib[0])):
@@ -240,6 +240,32 @@ class Layer:
         plt.imshow(correct_centImg)
 
         plt.pause(0.005)
+        return
+
+    def construct_STAMCentroids(self):
+        STAM_cents = np.zeros((NUM_OF_CLUSTERS, self.input_image.shape[0], self.input_image.shape[1]), dtype=float)
+        count_image = np.zeros((NUM_OF_CLUSTERS, self.input_image.shape[0], self.input_image.shape[1]))
+        stride = self.stride
+        recField_size = self.recField_size
+
+        plt.figure()
+        for k in range(NUM_OF_CLUSTERS):
+            for i in range(int(np.sqrt(self.num_STAMs))):
+                for j in range(int(np.sqrt(self.num_STAMs))):
+                    startI = i * stride
+                    endI = i * stride + recField_size
+                    startJ = j * stride
+                    endJ = j * stride + recField_size
+
+                    print("endI: " + str(endI) + "\nendJ: " + str(endJ) + "\n")
+
+                    STAM_cents[k][startI:endI][:, startJ:endJ] += self.STAMs[i][j].centroids[k]
+                    count_image[k][startI:endI][:, startJ:endJ] += 1
+            STAM_cents[k] = np.round(STAM_cents[k] / count_image[k])
+
+            plt.subplot(5, 2, k+1)
+            plt.imshow(STAM_cents[k])
+
         return
 
 #The STAM Class
@@ -382,6 +408,16 @@ for i in range(x_train.shape[0]):
     showCentroids(centroids_initial)
     raw_input('Press Enter to exit')
     plt.close('all')
+
+# Show how STAM centroids are changing after each new instance
+# L1 = Layer(4, 2, 0.005, centroids_initial)
+# for i in range(x_train.shape[0]):
+#     L1.feed(x_train[i])
+#     L1.construct_STAMCentroids()
+#     plt.pause(0.005)
+#     plt.show()
+#     raw_input('Press Enter to exit')
+#     plt.close('all')
 
 
 plt.pause(0.005)
