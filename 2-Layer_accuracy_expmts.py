@@ -3,6 +3,7 @@ import random
 from keras.datasets import mnist
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 import seaborn as sn
 import pandas as pd
 from collections import Counter
@@ -16,12 +17,24 @@ NUM_OF_CLUSTERS = 10            #the use of this variable will change a lot as w
 #The Layer Class
 class Layer:
 
-    def __init__(self, recField_size, stride, alpha, initCents):
+    def __init__(self, name, recField_size, stride, alpha, initCents):
         self.recField_size = recField_size
         self.stride = stride
         self.alpha = alpha
+        self.name = name
 
         self.initCentroids = initCents      #this field should be unnecessary as we progress
+
+        ############################################
+        # Create STAMs and Initialize STAM Centroids
+        ############################################
+
+        #Create/Initialize the layer's STAMs... number of STAMs == number of receptive fields
+        self.num_STAMs = int(np.power(np.floor((self.initCentroids[0].shape[0]-self.recField_size)/self.stride)+1, 2))
+        self.STAMs = [[STAM(recField_size=self.recField_size, alpha=self.alpha) for j in range(int(np.sqrt(self.num_STAMs)))] for i in range(int(np.sqrt(self.num_STAMs)))]
+
+        #Set all STAMs' initial centroid states
+        self.set_initCentroids()
 
     def set_STAM_input(self):
         stride = self.stride
@@ -87,9 +100,14 @@ class Layer:
             all_filter_image[start_row:end_row, start_col:end_col] = \
                 recFields[filter_num]
 
+        # save image instead of showing every time
+        self.recField_img = all_filter_image
+        '''
         plt.figure()
         plt.imshow(all_filter_image)
+        plt.title(self.name + " Receptive Fields")
         plt.axis('off')
+        '''
 
         return
 
@@ -121,7 +139,7 @@ class Layer:
                 startJ = j * stride
                 endJ = j * stride + recField_size
 
-                print("endI: " + str(endI) + "\nendJ: " + str(endJ) + "\n")
+                #print("endI: " + str(endI) + "\nendJ: " + str(endJ) + "\n")
 
                 self.output_image[startI:endI][:, startJ:endJ] += self.STAMs[i][j].output
                 count_image[startI:endI][:, startJ:endJ] += 1
@@ -135,25 +153,16 @@ class Layer:
         #set the layer's input image
         self.input_image = img
 
-        self.num_STAMs = int(np.power(np.floor((self.input_image.shape[0]-self.recField_size)/self.stride)+1, 2))
-
-        #Create/Initialize the layer's STAMs... number of STAMs == number of receptive fields
-        self.STAMs = [[STAM(recField_size=self.recField_size, alpha=self.alpha) for j in range(int(np.sqrt(self.num_STAMs)))] for i in range(int(np.sqrt(self.num_STAMs)))]
-
-        #Set all STAMs' initial centroid states
-        self.set_initCentroids()
-        #self.visualize_recFields("centroid", 7)        #demonstration of a centroid visualized
-
         #Give each STAM its input
         self.set_STAM_input()
-        plt.figure()
-        plt.imshow(self.input_image)
+        #plt.figure()
+        #plt.imshow(self.input_image); plt.title(self.name + " Input Image")
         self.visualize_recFields("input")
 
         #Create layer's output image
         self.get_output()
-        plt.figure()
-        plt.imshow(self.output_image)
+        #plt.figure()
+        #plt.imshow(self.output_image); plt.title(self.name + " Layer Output Image")
 
         return
 
@@ -169,7 +178,7 @@ class Layer:
         self.STAMs = [[STAM(recField_size=self.recField_size, alpha=self.alpha) for j in range(int(np.sqrt(self.num_STAMs)))] for i in range(int(np.sqrt(self.num_STAMs)))]
         self.set_STAM_input()
         plt.figure()
-        plt.imshow(self.input_image)
+        plt.imshow(self.input_image); plt.title(self.name + " Input Image")
         self.visualize_recFields("input")
 
         # reconstruct output with STAMs' input
@@ -193,7 +202,7 @@ class Layer:
 
         # show layer output image... should be same as input
         plt.figure()
-        plt.imshow(self.output_image)
+        plt.imshow(self.output_image); plt.title(self.name + " Output Image")
 
         # difference image
         dist = np.linalg.norm(self.input_image.flatten() - self.output_image.flatten())
@@ -237,7 +246,7 @@ class Layer:
                                 correct_centImg[i][j] = self.output_image[i][j]
                                 break
         plt.figure()
-        plt.imshow(correct_centImg)
+        plt.imshow(correct_centImg); plt.title(self.name + " Output Centroid Content")
 
         plt.pause(0.005)
         return
@@ -257,7 +266,6 @@ class Layer:
                     startJ = j * stride
                     endJ = j * stride + recField_size
 
-                    print("endI: " + str(endI) + "\nendJ: " + str(endJ) + "\n")
 
                     STAM_cents[k][startI:endI][:, startJ:endJ] += self.STAMs[i][j].centroids[k]
                     count_image[k][startI:endI][:, startJ:endJ] += 1
@@ -374,6 +382,14 @@ def feed_centroid(layer, cent=0):
 
     return
 
+def multipage(filename, figs=None, dpi=200):
+    pp = PdfPages(filename)
+    if figs is None:
+        figs = [plt.figure(n) for n in plt.get_fignums()]
+    for fig in figs:
+        fig.savefig(pp, format='pdf')
+    pp.close()
+
 '''
 **********************
 *********MAIN*********
@@ -390,38 +406,123 @@ centroids_initial = np.zeros((NUM_OF_CLUSTERS, x_train[0].shape[0], x_train[0].s
 initCents_close2avg()
 #showCentroids(centroids_initial)
 
+################
+################
+# Supervised
+################
+################
 
-# Test Layer output reconstruction
-#L1 = Layer(4, 2, 0.005, centroids_initial)
-#L1.test_output_construction(x_train[1])
+# Layered Models
+alphas = [0.05, 0.025, 0.005]
+for a in range(len(alphas)):
+    conf_mat = np.zeros((NUM_OF_CLUSTERS, NUM_OF_CLUSTERS))  # True class will be rows, classified will be cols
+    L1 = Layer("L1", 7, 7, alphas[a], centroids_initial)
+    L_final = Layer("L Final", 28, 28, alphas[a], centroids_initial)
 
-# Test if centroids will be output as themselves
-#L1 = Layer(4, 2, 0.005, centroids_initial)
-#feed_centroid(L1, 8)
+    # Feed
+    div = 100000
+    layered_score = 0
+    for i in range(x_train.shape[0]):
+        L1.feed(x_train[i])
+        L_final.feed(L1.output_image)
+        classified = L_final.STAMs[0][0].output_cent
 
-# Show content of layer's output image with respect to STAM centroids
-#L1 = Layer(4, 2, 0.005, centroids_initial)
-L1 = Layer(7, 7, 0.05, centroids_initial)
-m = True
-for i in range(x_train.shape[0]):
-    L1.feed(x_train[i])
-    L1.show_centroidContent(y_train[i], m)
-    showCentroids(centroids_initial)
-    raw_input('Press Enter to exit')
+        conf_mat[y_train[i]][classified] += 1
+
+        #if (classified == y_train[i]):
+        #    layered_score += 1
+
+        print(str(round((i/float(x_train.shape[0]))*100, 1)) + "% complete...")
+
+        if (i + 1) % div == 0:
+            plt.close('all')
+            accu = round((sum(conf_mat.diagonal()) / float(i+1)) * 100, 2)
+            sn.heatmap(conf_mat, annot=True, fmt='g'); plt.title(str(accu) + "% Accuracy (using " + str(i + 1) + " examples)")
+            showCentroids(L_final.STAMs[0][0].centroids); plt.suptitle("L Final Centroids")
+            showCentroids(centroids_initial); plt.suptitle("Initial Centroids")
+            plt.pause(0.005)
+            #raw_input('Press Enter to exit')
+
+        '''
+        print(L_final.STAMs[0][0].output_cent)
+        plt.figure(); plt.imshow(L1.input_image); plt.title("L1 Input Image")
+        plt.figure(); plt.imshow(L_final.input_image); plt.title("L Final Input Image")
+        plt.figure(); plt.imshow(L_final.output_image); plt.title("L Final Output Image")
+        showCentroids(centroids_initial)
+        plt.pause(0.005)
+        plt.show()
+        raw_input('Press Enter to exit')
+        plt.close('all')
+        '''
+
     plt.close('all')
+    accu = round((sum(conf_mat.diagonal()) / float(x_train.shape[0])) * 100, 2)
+    sn.heatmap(conf_mat, annot=True, fmt='g'); plt.title(str(accu) + "% Accuracy (using " + str(i+1) + " examples)")
+    showCentroids(L_final.STAMs[0][0].centroids); plt.suptitle("L Final Centroids")
+    showCentroids(centroids_initial); plt.suptitle("Initial Centroids")
+    #print("Final Layered Accuracy: " + str(layered_score / float(x_train.shape[0])))
 
-# Show how STAM centroids are changing after each new instance
-# L1 = Layer(4, 2, 0.005, centroids_initial)
-# for i in range(x_train.shape[0]):
-#     L1.feed(x_train[i])
-#     L1.construct_STAMCentroids()
-#     plt.pause(0.005)
-#     plt.show()
-#     raw_input('Press Enter to exit')
-#     plt.close('all')
+    # Save PDF
+    multipage("Alpha_" + str(a))
+
+
+# Single STAM Models            NOT IMPLEMENTED YET
+'''
+alphas = [0.05, 0.025, 0.005]
+for a in range(len(alphas)):
+    conf_mat = np.zeros((NUM_OF_CLUSTERS, NUM_OF_CLUSTERS))  # True class will be rows, classified will be cols
+    L1 = Layer("L1", 7, 7, alphas[a], centroids_initial)
+    L_final = Layer("L Final", 28, 28, alphas[a], centroids_initial)
+
+    # Feed
+    div = 100000
+    layered_score = 0
+    for i in range(x_train.shape[0]):
+        L1.feed(x_train[i])
+        L_final.feed(L1.output_image)
+        classified = L_final.STAMs[0][0].output_cent
+
+        conf_mat[y_train[i]][classified] += 1
+
+        #if (classified == y_train[i]):
+        #    layered_score += 1
+
+        print(str(round((i/float(x_train.shape[0]))*100, 1)) + "% complete...")
+
+        if (i + 1) % div == 0:
+            plt.close('all')
+            accu = round((sum(conf_mat.diagonal()) / float(i+1)) * 100, 2)
+            sn.heatmap(conf_mat, annot=True, fmt='g'); plt.title(str(accu) + "% Accuracy (using " + str(i + 1) + " examples)")
+            showCentroids(L_final.STAMs[0][0].centroids); plt.suptitle("L Final Centroids")
+            showCentroids(centroids_initial); plt.suptitle("Initial Centroids")
+            plt.pause(0.005)
+            #raw_input('Press Enter to exit')
+
+        
+        # print(L_final.STAMs[0][0].output_cent)
+        # plt.figure(); plt.imshow(L1.input_image); plt.title("L1 Input Image")
+        # plt.figure(); plt.imshow(L_final.input_image); plt.title("L Final Input Image")
+        # plt.figure(); plt.imshow(L_final.output_image); plt.title("L Final Output Image")
+        # showCentroids(centroids_initial)
+        # plt.pause(0.005)
+        # plt.show()
+        # raw_input('Press Enter to exit')
+        # plt.close('all')
+        
+
+    plt.close('all')
+    accu = round((sum(conf_mat.diagonal()) / float(x_train.shape[0])) * 100, 2)
+    sn.heatmap(conf_mat, annot=True, fmt='g'); plt.title(str(accu) + "% Accuracy (using " + str(i+1) + " examples)")
+    showCentroids(L_final.STAMs[0][0].centroids); plt.suptitle("L Final Centroids")
+    showCentroids(centroids_initial); plt.suptitle("Initial Centroids")
+    #print("Final Layered Accuracy: " + str(layered_score / float(x_train.shape[0])))
+
+    # Save PDF
+    multipage("Alpha_" + str(a))
+
+'''
+
 
 
 plt.pause(0.005)
-plt.show()
-print('done')
 raw_input('Press Enter to exit')
