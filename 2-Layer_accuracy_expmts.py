@@ -7,6 +7,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 import seaborn as sn
 import pandas as pd
 from collections import Counter
+from tempfile import TemporaryFile
 
 
 plt.interactive(True)
@@ -83,8 +84,8 @@ class Layer:
                     recFields[count] = STAMs[i][j].centroids[cent]
                 count += 1
 
-        all_filter_image = np.zeros((row_amount * image_height + border * row_amount,
-                                     col_amount * image_width + border * col_amount))
+        all_filter_image = np.full((row_amount * image_height + border * row_amount,
+                                     col_amount * image_width + border * col_amount), float('inf'))
 
         for filter_num in range(images_amount):
             start_row = image_height * (filter_num / col_amount) + \
@@ -303,10 +304,8 @@ class STAM:
         self.adjust_centroid(close_ind)
 
 
-
 #Init Methods for initial centroids
-def initCents_avg(n):                   #if n = float("inf"), average all examples together
-    global centroids_initial
+def initCents_avg(centroids_initial, n):                   #if n = float("inf"), average all examples together
 
     if n == float("inf"):
         avgCents_full = np.zeros((NUM_OF_CLUSTERS, 28*28))
@@ -338,16 +337,15 @@ def initCents_avg(n):                   #if n = float("inf"), average all exampl
         temp = avgCents.mean(axis=0)
         for i in range(0, 10):
             centroids_initial[i, :, :] = (temp[i, :]).reshape((x_train[0].shape[0], x_train[0].shape[0]))
-    return
+    return centroids_initial
 
-def initCents_close2avg():
-    global centroids_initial
+def initCents_close2avg(centroids_initial):
 
     temp_cents = np.zeros((centroids_initial.shape[0], centroids_initial.shape[1] * centroids_initial.shape[1]))
     best_dists = np.full((NUM_OF_CLUSTERS, 1), float("inf"))
 
     #populate centroids with averages of all instances in training set
-    initCents_avg(float("inf"))
+    centroids_initial = initCents_avg(centroids_initial, float("inf"))
 
     #pick instances that are closest to global averages per class
     for i in range(0, x_train.shape[0]):
@@ -359,7 +357,32 @@ def initCents_close2avg():
 
     centroids_initial = temp_cents.reshape((NUM_OF_CLUSTERS, x_train[0].shape[0], x_train[0].shape[0]))
 
-    return
+    return centroids_initial
+
+def initCents_pickRands(centroids):
+    n = 1
+    cent_picks = np.zeros((10, n))  #will hold the random pick'th instance in sample
+    tr_stat = plt.hist(y_train)     #get number of instances in each class
+    plt.close('all')
+
+    #get indicies for random selection from train
+    for i in range(0, 10):
+        pick = random.randint(1, int(tr_stat[0][i]))
+        while pick in cent_picks:
+            pick = random.randint(1, int(tr_stat[0][i]))
+        cent_picks[i, n-1] = pick
+
+    #populate centroids
+    for i in range(0, 10):
+        count = 0
+        j = 0
+        while count != cent_picks[i, n-1]:
+            if y_train[j] == i:
+                count = count + 1
+            j = j + 1
+        centroids[i] = x_train[j-1]
+
+    return centroids
 
 def showCentroids(centroids):
     plt.figure()
@@ -371,7 +394,7 @@ def showCentroids(centroids):
     plt.show()
     return
 
-def feed_centroid(layer, cent=0):
+def feed_centroid(centroids_initial, layer, cent=0):
     cent = cent
     layer.feed(centroids_initial[cent, :, :])
     dist = np.linalg.norm(centroids_initial[cent, :, :].flatten() - layer.output_image.flatten())
@@ -400,11 +423,12 @@ def multipage(filename, figs=None, dpi=200):
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
 
 # Initialize global centroids
-centroids_initial = np.zeros((NUM_OF_CLUSTERS, x_train[0].shape[0], x_train[0].shape[0]))
-#initCents_avg(float("inf"))
-#initCents_avg(5)
-initCents_close2avg()
-#showCentroids(centroids_initial)
+centroids_init_c2avg = np.zeros((NUM_OF_CLUSTERS, x_train[0].shape[0], x_train[0].shape[0]))
+centroids_init_c2avg = initCents_close2avg(centroids_init_c2avg)
+
+centroids_init_rand1 = np.zeros((NUM_OF_CLUSTERS, x_train[0].shape[0], x_train[0].shape[0]))
+centroids_init_rand1 = initCents_pickRands(centroids_init_rand1)
+
 
 ################
 ################
@@ -413,115 +437,285 @@ initCents_close2avg()
 ################
 
 # Layered Models
-alphas = [0.05, 0.025, 0.005]
-for a in range(len(alphas)):
-    conf_mat = np.zeros((NUM_OF_CLUSTERS, NUM_OF_CLUSTERS))  # True class will be rows, classified will be cols
-    L1 = Layer("L1", 7, 7, alphas[a], centroids_initial)
-    L_final = Layer("L Final", 28, 28, alphas[a], centroids_initial)
+# alphas = [0.05, 0.025, 0.005]
+# for a in range(len(alphas)):
+#     conf_mat = np.zeros((NUM_OF_CLUSTERS, NUM_OF_CLUSTERS))  # True class will be rows, classified will be cols
+#     L1 = Layer("L1", 7, 7, alphas[a], centroids_init_c2avg)
+#     L_final = Layer("L Final", 28, 28, alphas[a], centroids_init_c2avg)
+#
+#     # Feed
+#     div = 100
+#     accu_dps = np.zeros((1, x_train.shape[0] / div));
+#     a_count = 0
+#     for i in range(x_train.shape[0]):
+#         L1.feed(x_train[i])
+#         L_final.feed(L1.output_image)
+#         classified = L_final.STAMs[0][0].output_cent
+#
+#         conf_mat[y_train[i]][classified] += 1
+#
+#         print(str(round((i / float(x_train.shape[0])) * 100, 1)) + "% complete...")
+#
+#         if (i + 1) % div == 0:
+#             # Save accuracy datapoint
+#             accu_dps[0][a_count] = round((sum(conf_mat.diagonal()) / float(i + 1)) * 100, 2)
+#             a_count += 1
+#
+#             # Show progress after some iterations
+#             # plt.close('all')
+#             # accu = round((sum(conf_mat.diagonal()) / float(i+1)) * 100, 2)
+#             # sn.heatmap(conf_mat, annot=True, fmt='g'); plt.title(str(accu) + "% Accuracy (using " + str(i + 1) + " examples)")
+#             # showCentroids(L_single.STAMs[0][0].centroids); plt.suptitle("L Single Centroids")
+#             # showCentroids(centroids_initial); plt.suptitle("Initial Centroids")
+#             # plt.pause(0.005)
+#             # raw_input('Press Enter to exit')
+#
+#         # Show relavent figures after one iteration
+#         # print(L_final.STAMs[0][0].output_cent)
+#         # plt.figure(); plt.imshow(L1.input_image); plt.title("L1 Input Image")
+#         # plt.figure(); plt.imshow(L_final.input_image); plt.title("L Final Input Image")
+#         # plt.figure(); plt.imshow(L_final.output_image); plt.title("L Final Output Image")
+#         # showCentroids(centroids_initial)
+#         # plt.pause(0.005)
+#         # plt.show()
+#         # raw_input('Press Enter to exit')
+#         # plt.close('all')
+#
+#     plt.close('all')
+#     accu = round((sum(conf_mat.diagonal()) / float(x_train.shape[0])) * 100, 2)
+#     plt.figure()
+#     x_plot = np.linspace(div, x_train.shape[0], x_train.shape[0] / div)
+#     plt.plot(x_plot, accu_dps[0]);
+#     plt.title("Classification Accuracy After X Examples")
+#
+#     plt.figure()
+#     sn.heatmap(conf_mat, annot=True, fmt='g');
+#     plt.title(str(accu) + "% Accuracy (using " + str(i + 1) + " examples)")
+#
+#     showCentroids(L_final.STAMs[0][0].centroids);
+#     plt.suptitle("L Final Centroids")
+#     showCentroids(centroids_init_c2avg);
+#     plt.suptitle("Initial Centroids")
+#     # print("Final Layered Accuracy: " + str(layered_score / float(x_train.shape[0])))
+#
+#     # Save PDF
+#     multipage("AlphaLayered_" + str(a))
 
-    # Feed
-    div = 100000
-    layered_score = 0
+
+# Single STAM Models
+#
+# alphas = [0.05, 0.025, 0.005]
+# for a in range(len(alphas)):
+#     conf_mat = np.zeros((NUM_OF_CLUSTERS, NUM_OF_CLUSTERS))  # True class will be rows, classified will be cols
+#     L_single = Layer("L Single", 28, 28, alphas[a], centroids_init_c2avg)
+#
+#     # Feed
+#     div = 100
+#     accu_dps = np.zeros((1, x_train.shape[0]/div)); a_count = 0
+#     for i in range(x_train.shape[0]):
+#         L_single.feed(x_train[i])
+#         classified = L_single.STAMs[0][0].output_cent
+#
+#         conf_mat[y_train[i]][classified] += 1
+#
+#         print(str(round((i/float(x_train.shape[0]))*100, 1)) + "% complete...")
+#
+#         if (i + 1) % div == 0:
+#             # Save accuracy datapoint
+#             accu_dps[0][a_count] = round((sum(conf_mat.diagonal()) / float(i+1)) * 100, 2)
+#             a_count += 1
+#
+#             # Show progress after some iterations
+#             # plt.close('all')
+#             # accu = round((sum(conf_mat.diagonal()) / float(i+1)) * 100, 2)
+#             # sn.heatmap(conf_mat, annot=True, fmt='g'); plt.title(str(accu) + "% Accuracy (using " + str(i + 1) + " examples)")
+#             # showCentroids(L_single.STAMs[0][0].centroids); plt.suptitle("L Single Centroids")
+#             # showCentroids(centroids_initial); plt.suptitle("Initial Centroids")
+#             # plt.pause(0.005)
+#             # raw_input('Press Enter to exit')
+#
+#         # Show relavent figures after one iteration
+#         # print(L_final.STAMs[0][0].output_cent)
+#         # plt.figure(); plt.imshow(L1.input_image); plt.title("L1 Input Image")
+#         # plt.figure(); plt.imshow(L_final.input_image); plt.title("L Final Input Image")
+#         # plt.figure(); plt.imshow(L_final.output_image); plt.title("L Final Output Image")
+#         # showCentroids(centroids_initial)
+#         # plt.pause(0.005)
+#         # plt.show()
+#         # raw_input('Press Enter to exit')
+#         # plt.close('all')
+#
+#
+#     plt.close('all')
+#     accu = round((sum(conf_mat.diagonal()) / float(x_train.shape[0])) * 100, 2)
+#     plt.figure()
+#     x_plot = np.linspace(div, x_train.shape[0], x_train.shape[0]/div)
+#     plt.plot(x_plot, accu_dps[0]); plt.title("Classification Accuracy After X Examples")
+#
+#     plt.figure()
+#     sn.heatmap(conf_mat, annot=True, fmt='g'); plt.title(str(accu) + "% Accuracy (using " + str(i+1) + " examples)")
+#
+#     showCentroids(L_single.STAMs[0][0].centroids); plt.suptitle("L Single Centroids")
+#     showCentroids(centroids_initial); plt.suptitle("Initial Centroids")
+#     #print("Final Layered Accuracy: " + str(layered_score / float(x_train.shape[0])))
+#
+#     # Save PDF
+#     #multipage("AlphaSingle_" + str(a))
+
+def getAccuracies(L1, L_final, L_single, div=100):
+    conf_mat = np.zeros((2, NUM_OF_CLUSTERS, NUM_OF_CLUSTERS))  # True class will be rows, classified will be cols
+    accu_dps = np.zeros((2, NUM_OF_CLUSTERS+1, x_train.shape[0] / div));
+    a_count = 0
+    classified = np.zeros(2, int)
     for i in range(x_train.shape[0]):
+        # Feed layered model
         L1.feed(x_train[i])
         L_final.feed(L1.output_image)
-        classified = L_final.STAMs[0][0].output_cent
 
-        conf_mat[y_train[i]][classified] += 1
+        # Feed single STAM model
+        L_single.feed(x_train[i])
 
-        #if (classified == y_train[i]):
-        #    layered_score += 1
+        classified[0] = L_final.STAMs[0][0].output_cent
+        classified[1] = L_single.STAMs[0][0].output_cent
 
-        print(str(round((i/float(x_train.shape[0]))*100, 1)) + "% complete...")
+        conf_mat[0][y_train[i]][classified[0]] += 1
+        conf_mat[1][y_train[i]][classified[1]] += 1
 
-        if (i + 1) % div == 0:
-            plt.close('all')
-            accu = round((sum(conf_mat.diagonal()) / float(i+1)) * 100, 2)
-            sn.heatmap(conf_mat, annot=True, fmt='g'); plt.title(str(accu) + "% Accuracy (using " + str(i + 1) + " examples)")
-            showCentroids(L_final.STAMs[0][0].centroids); plt.suptitle("L Final Centroids")
-            showCentroids(centroids_initial); plt.suptitle("Initial Centroids")
-            plt.pause(0.005)
-            #raw_input('Press Enter to exit')
-
-        '''
-        print(L_final.STAMs[0][0].output_cent)
-        plt.figure(); plt.imshow(L1.input_image); plt.title("L1 Input Image")
-        plt.figure(); plt.imshow(L_final.input_image); plt.title("L Final Input Image")
-        plt.figure(); plt.imshow(L_final.output_image); plt.title("L Final Output Image")
-        showCentroids(centroids_initial)
-        plt.pause(0.005)
-        plt.show()
-        raw_input('Press Enter to exit')
-        plt.close('all')
-        '''
-
-    plt.close('all')
-    accu = round((sum(conf_mat.diagonal()) / float(x_train.shape[0])) * 100, 2)
-    sn.heatmap(conf_mat, annot=True, fmt='g'); plt.title(str(accu) + "% Accuracy (using " + str(i+1) + " examples)")
-    showCentroids(L_final.STAMs[0][0].centroids); plt.suptitle("L Final Centroids")
-    showCentroids(centroids_initial); plt.suptitle("Initial Centroids")
-    #print("Final Layered Accuracy: " + str(layered_score / float(x_train.shape[0])))
-
-    # Save PDF
-    multipage("Alpha_" + str(a))
-
-
-# Single STAM Models            NOT IMPLEMENTED YET
-'''
-alphas = [0.05, 0.025, 0.005]
-for a in range(len(alphas)):
-    conf_mat = np.zeros((NUM_OF_CLUSTERS, NUM_OF_CLUSTERS))  # True class will be rows, classified will be cols
-    L1 = Layer("L1", 7, 7, alphas[a], centroids_initial)
-    L_final = Layer("L Final", 28, 28, alphas[a], centroids_initial)
-
-    # Feed
-    div = 100000
-    layered_score = 0
-    for i in range(x_train.shape[0]):
-        L1.feed(x_train[i])
-        L_final.feed(L1.output_image)
-        classified = L_final.STAMs[0][0].output_cent
-
-        conf_mat[y_train[i]][classified] += 1
-
-        #if (classified == y_train[i]):
-        #    layered_score += 1
-
-        print(str(round((i/float(x_train.shape[0]))*100, 1)) + "% complete...")
+        print(str(round((i / float(x_train.shape[0])) * 100, 1)) + "% complete...")
 
         if (i + 1) % div == 0:
-            plt.close('all')
-            accu = round((sum(conf_mat.diagonal()) / float(i+1)) * 100, 2)
-            sn.heatmap(conf_mat, annot=True, fmt='g'); plt.title(str(accu) + "% Accuracy (using " + str(i + 1) + " examples)")
-            showCentroids(L_final.STAMs[0][0].centroids); plt.suptitle("L Final Centroids")
-            showCentroids(centroids_initial); plt.suptitle("Initial Centroids")
-            plt.pause(0.005)
-            #raw_input('Press Enter to exit')
+            # Save accuracy datapoints
+            # Total Accuracy
+            accu_dps[0][0][a_count] = round((sum(conf_mat[0].diagonal()) / float(i + 1)) * 100, 2)
+            accu_dps[1][0][a_count] = round((sum(conf_mat[1].diagonal()) / float(i + 1)) * 100, 2)
+            # Per Cluster Accuracy
+            for j in range(NUM_OF_CLUSTERS):
+                accu_dps[0][j+1][a_count] = round((conf_mat[0][j][j] / sum(conf_mat[0][j])) * 100, 2)
+                accu_dps[1][j+1][a_count] = round((conf_mat[1][j][j] / sum(conf_mat[1][j])) * 100, 2)
+            a_count += 1
 
-        
-        # print(L_final.STAMs[0][0].output_cent)
-        # plt.figure(); plt.imshow(L1.input_image); plt.title("L1 Input Image")
-        # plt.figure(); plt.imshow(L_final.input_image); plt.title("L Final Input Image")
-        # plt.figure(); plt.imshow(L_final.output_image); plt.title("L Final Output Image")
-        # showCentroids(centroids_initial)
-        # plt.pause(0.005)
-        # plt.show()
-        # raw_input('Press Enter to exit')
-        # plt.close('all')
-        
+        # Show progress with figures
+        # if (i+1)%30000 == 0:
+        #     plt.close('all')
+        #     accu = round((sum(conf_mat[0].diagonal()) / float(i+1)) * 100, 2)
+        #     sn.heatmap(conf_mat[0], annot=True, fmt='g'); plt.title(str(accu) + "% Layered Accuracy (using " + str(i + 1) + " examples)")
+        #     showCentroids(L_final.STAMs[0][0].centroids); plt.suptitle("Layered Centroids")
+        #     accu = round((sum(conf_mat[1].diagonal()) / float(i+1)) * 100, 2)
+        #     plt.figure()
+        #     sn.heatmap(conf_mat[1], annot=True, fmt='g'); plt.title(str(accu) + "% Single STAM Accuracy (using " + str(i + 1) + " examples)")
+        #     showCentroids(L_single.STAMs[0][0].centroids); plt.suptitle("Single STAM Centroids")
+        #     plt.pause(0.005)
+        #     raw_input('Press Enter to exit')
 
-    plt.close('all')
-    accu = round((sum(conf_mat.diagonal()) / float(x_train.shape[0])) * 100, 2)
-    sn.heatmap(conf_mat, annot=True, fmt='g'); plt.title(str(accu) + "% Accuracy (using " + str(i+1) + " examples)")
-    showCentroids(L_final.STAMs[0][0].centroids); plt.suptitle("L Final Centroids")
-    showCentroids(centroids_initial); plt.suptitle("Initial Centroids")
-    #print("Final Layered Accuracy: " + str(layered_score / float(x_train.shape[0])))
+    return accu_dps
 
-    # Save PDF
-    multipage("Alpha_" + str(a))
+div = 100
 
-'''
+# Close2Avg Models
+L1 = Layer("L1", 7, 7, 0.005, centroids_init_c2avg)
+L_final = Layer("L Final", 28, 28, 0.005, centroids_init_c2avg)
+L_single = Layer("L Single", 28, 28, 0.005, centroids_init_c2avg)
+accu_c2avg = getAccuracies(L1, L_final, L_single, div)
 
+# Random 1 Models
+L1 = Layer("L1", 7, 7, 0.005, centroids_init_rand1)
+L_final = Layer("L Final", 28, 28, 0.005, centroids_init_rand1)
+L_single = Layer("L Single", 28, 28, 0.005, centroids_init_rand1)
+accu_rand1 = getAccuracies(L1, L_final, L_single, div)
+
+# Plot Results
+
+# Model Accuracy Comp
+# plt.figure()
+# x_plot = np.linspace(div, x_train.shape[0], x_train.shape[0]/div)
+# plt.plot(x_plot, accu_c2avg[0][0][:], label='Layered')
+# plt.plot(x_plot, accu_c2avg[1][0][:], label='Single STAM')
+# plt.title("Classification Accuracy (Close2Avg Init Method)"); plt.legend()
+# plt.show()
+#
+# plt.figure()
+# plt.plot(x_plot, accu_rand1[0][0][:], label='Layered')
+# plt.plot(x_plot, accu_rand1[1][0][:], label='Single STAM')
+# plt.title("Classification Accuracy (Random Pick Init Method)"); plt.legend()
+# plt.show()
+
+# Per Cluster Accuracy Clos2Avg
+# plt.figure()
+# ax = plt.subplot(111)
+# x_plot = np.linspace(div, x_train.shape[0], x_train.shape[0]/div)
+# ax.plot(x_plot, accu_c2avg[0][0][:], label='Overall')
+# for i in range(NUM_OF_CLUSTERS):
+#     plt.plot(x_plot, accu_c2avg[0][i][:], label='Clust ' + str(i))
+# plt.title("Layered Classification Accuracy (Close2Avg Init Method)");
+# box = ax.get_position(); ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+# ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+# plt.show()
+#
+# plt.figure()
+# ax = plt.subplot(111)
+# x_plot = np.linspace(div, x_train.shape[0], x_train.shape[0]/div)
+# ax.plot(x_plot, accu_c2avg[1][0][:], label='Overall')
+# for i in range(NUM_OF_CLUSTERS):
+#     plt.plot(x_plot, accu_c2avg[1][i][:], label='Clust ' + str(i))
+# plt.title("Single STAM Classification Accuracy (Close2Avg Init Method)");
+# box = ax.get_position(); ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+# ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+# plt.show()
+
+
+def getResults_alpha(div=100):
+    alphas = [0.05, 0.025, 0.005]
+    accu_dps = np.zeros((2, len(alphas), x_train.shape[0] / div));
+    for a in range(len(alphas)):
+        L1 = Layer("L1", 7, 7, alphas[a], centroids_init_c2avg)
+        L_final = Layer("L Final", 28, 28, alphas[a], centroids_init_c2avg)
+        L_single = Layer("L Single", 28, 28, alphas[a], centroids_init_c2avg)
+        conf_mat = np.zeros((2, NUM_OF_CLUSTERS, NUM_OF_CLUSTERS), int)
+        a_count = 0
+        classified = np.zeros(2, int)
+        for i in range(x_train.shape[0]):
+            # Feed layered model
+            L1.feed(x_train[i])
+            L_final.feed(L1.output_image)
+
+            # Feed single STAM model
+            L_single.feed(x_train[i])
+
+            classified[0] = L_final.STAMs[0][0].output_cent
+            classified[1] = L_single.STAMs[0][0].output_cent
+
+            conf_mat[0][y_train[i]][classified[0]] += 1
+            conf_mat[1][y_train[i]][classified[1]] += 1
+
+            print(str(round((i / float(x_train.shape[0])) * 100, 1)) + "% complete...")
+
+            if (i + 1) % div == 0:
+                # Save accuracy datapoint
+                accu_dps[0][a][a_count] = round((sum(conf_mat[0].diagonal()) / float(i + 1)) * 100, 2)
+                accu_dps[1][a][a_count] = round((sum(conf_mat[1].diagonal()) / float(i + 1)) * 100, 2)
+                a_count += 1
+    return accu_dps
+
+
+
+# div = 100
+# accu_alphaComp = getResults_alpha(div)
+# np.save('alpha_comp.npy', accu_alphaComp)
+#
+# plt.figure()
+# x_plot = np.linspace(div, x_train.shape[0], x_train.shape[0]/div)
+# plt.plot(x_plot, accu_alphaComp[0][0][:], label='Alpha = 0.05')
+# plt.plot(x_plot, accu_alphaComp[0][1][:], label='Alpha = 0.025')
+# plt.plot(x_plot, accu_alphaComp[0][2][:], label='Alpha = 0.005')
+# plt.title("Layered Classification Accuracy After X Examples"); plt.legend()
+# plt.show()
+# plt.figure()
+# x_plot = np.linspace(div, x_train.shape[0], x_train.shape[0]/div)
+# plt.plot(x_plot, accu_alphaComp[1][0][:], label='Alpha = 0.05')
+# plt.plot(x_plot, accu_alphaComp[1][1][:], label='Alpha = 0.025')
+# plt.plot(x_plot, accu_alphaComp[1][2][:], label='Alpha = 0.005')
+# plt.title("Single STAM Classification Accuracy After X Examples"); plt.legend()
+# plt.show()
 
 
 plt.pause(0.005)

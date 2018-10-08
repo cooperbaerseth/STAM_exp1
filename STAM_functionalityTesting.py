@@ -70,8 +70,8 @@ class Layer:
                     recFields[count] = STAMs[i][j].centroids[cent]
                 count += 1
 
-        all_filter_image = np.zeros((row_amount * image_height + border * row_amount,
-                                     col_amount * image_width + border * col_amount))
+        all_filter_image = np.full((row_amount * image_height + border * row_amount,
+                                     col_amount * image_width + border * col_amount), float('inf'))
 
         for filter_num in range(images_amount):
             start_row = image_height * (filter_num / col_amount) + \
@@ -400,8 +400,8 @@ initCents_close2avg()
 #feed_centroid(L1, 8)
 
 # Show content of layer's output image with respect to STAM centroids
-#L1 = Layer(4, 2, 0.005, centroids_initial)
-L1 = Layer(7, 7, 0.05, centroids_initial)
+L1 = Layer(6, 2, 0.005, centroids_initial)
+#L1 = Layer(7, 7, 0.05, centroids_initial)
 m = True
 for i in range(x_train.shape[0]):
     L1.feed(x_train[i])
