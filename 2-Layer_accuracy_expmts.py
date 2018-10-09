@@ -8,6 +8,7 @@ import seaborn as sn
 import pandas as pd
 from collections import Counter
 from tempfile import TemporaryFile
+from matplotlib.patches import Rectangle
 
 
 plt.interactive(True)
@@ -384,6 +385,31 @@ def initCents_pickRands(centroids):
 
     return centroids
 
+def shuffleHist(x, x_shuff):
+    # Show original image and shuffled have same values contained
+    fig, subp = plt.subplots(2, 2)
+    subp[0, 0].hist(x.flatten())
+    subp[0, 1].hist(x_shuff)
+    subp[1, 0].imshow(x)
+    subp[1, 1].imshow(x_shuff.reshape(x.shape))
+    plt.suptitle('Original vs Shuffled Histograms')
+    plt.show()
+
+def initCents_shuff(centroids_initial):
+    temp_cents = np.zeros((NUM_OF_CLUSTERS, centroids_initial.shape[1]*centroids_initial.shape[1]))
+    for i in range(NUM_OF_CLUSTERS):
+        temp_cents[i] = centroids_initial[i].flatten()
+        np.random.shuffle(temp_cents[i])
+        #shuffleHist(centroids_initial[i], temp_cents[i])       # shows histogram equivilance
+        centroids_initial[i] = temp_cents[i].reshape(centroids_initial[0].shape)
+
+    # Take out 1 since it was the centroid with the smallest sum
+    # centroids_initial[1] = temp_cents[0].reshape(centroids_initial[0].shape)
+    # for i in range(NUM_OF_CLUSTERS):
+    #     print(np.sum(centroids_initial[i]))
+
+    return centroids_initial
+
 def showCentroids(centroids):
     plt.figure()
     for i in range(NUM_OF_CLUSTERS):
@@ -609,19 +635,19 @@ def getAccuracies(L1, L_final, L_single, div=100):
 
     return accu_dps
 
-div = 100
-
-# Close2Avg Models
-L1 = Layer("L1", 7, 7, 0.005, centroids_init_c2avg)
-L_final = Layer("L Final", 28, 28, 0.005, centroids_init_c2avg)
-L_single = Layer("L Single", 28, 28, 0.005, centroids_init_c2avg)
-accu_c2avg = getAccuracies(L1, L_final, L_single, div)
-
-# Random 1 Models
-L1 = Layer("L1", 7, 7, 0.005, centroids_init_rand1)
-L_final = Layer("L Final", 28, 28, 0.005, centroids_init_rand1)
-L_single = Layer("L Single", 28, 28, 0.005, centroids_init_rand1)
-accu_rand1 = getAccuracies(L1, L_final, L_single, div)
+# div = 100
+#
+# # Close2Avg Models
+# L1 = Layer("L1", 7, 7, 0.005, centroids_init_c2avg)
+# L_final = Layer("L Final", 28, 28, 0.005, centroids_init_c2avg)
+# L_single = Layer("L Single", 28, 28, 0.005, centroids_init_c2avg)
+# accu_c2avg = getAccuracies(L1, L_final, L_single, div)
+#
+# # Random 1 Models
+# L1 = Layer("L1", 7, 7, 0.005, centroids_init_rand1)
+# L_final = Layer("L Final", 28, 28, 0.005, centroids_init_rand1)
+# L_single = Layer("L Single", 28, 28, 0.005, centroids_init_rand1)
+# accu_rand1 = getAccuracies(L1, L_final, L_single, div)
 
 # Plot Results
 
@@ -716,6 +742,111 @@ def getResults_alpha(div=100):
 # plt.plot(x_plot, accu_alphaComp[1][2][:], label='Alpha = 0.005')
 # plt.title("Single STAM Classification Accuracy After X Examples"); plt.legend()
 # plt.show()
+
+
+################
+################
+# Unsupervised
+################
+################
+
+# Initialize centroids with shuffled Close2Avg cents
+centroids_init_shuff = np.zeros((NUM_OF_CLUSTERS, x_train[0].shape[0], x_train[0].shape[0]))
+centroids_init_shuff = initCents_shuff(initCents_close2avg(centroids_init_shuff))
+#showCentroids(centroids_init_shuff)
+
+def heatmap_majClust(mat):
+    # Each column in mat corresponds to a cluster, and each row in the column corresponds to a class of object.
+    # For each cluster, highlight the majority class by putting a rectangle around the majority class' cell.
+    ax = sn.heatmap(mat, annot=True, fmt='g')
+    for i in range(NUM_OF_CLUSTERS):
+        if np.max(mat[:, i]) != 0:
+            ax.add_patch(Rectangle((i, np.argmax(mat[:, i])), 1, 1, fill=False, edgecolor='blue', lw=3))
+    plt.show()
+
+def getHomogeneity(L1, L_final, L_single, div=100):
+    conf_mat = np.zeros((2, NUM_OF_CLUSTERS, NUM_OF_CLUSTERS))  # True class will be rows, clustered will be cols
+    homog_dps = np.zeros((2, NUM_OF_CLUSTERS+1, x_train.shape[0] / div));
+    a_count = 0
+    clustered = np.zeros(2, int)
+    for i in range(x_train.shape[0]):
+        # Feed layered model
+        L1.feed(x_train[i])
+        L_final.feed(L1.output_image)
+
+        # Feed single STAM model
+        L_single.feed(x_train[i])
+
+        clustered[0] = L_final.STAMs[0][0].output_cent
+        clustered[1] = L_single.STAMs[0][0].output_cent
+
+        conf_mat[0][y_train[i]][clustered[0]] += 1
+        conf_mat[1][y_train[i]][clustered[1]] += 1
+
+        print(str(round((i / float(x_train.shape[0])) * 100, 1)) + "% complete...")
+
+        if (i + 1) % div == 0:
+            # Save homogeneity datapoints
+            # Per Cluster Homogeneity
+            for j in range(NUM_OF_CLUSTERS):
+                if np.max(conf_mat[0][:, j]) != 0:
+                    homog_dps[0][j][a_count] = round((np.max(conf_mat[0][:, j]) / np.sum(conf_mat[0][:, j])) * 100, 2)
+                else:
+                    homog_dps[0][j][a_count] = 0
+
+                if np.max(conf_mat[1][:, j]) != 0:
+                    homog_dps[1][j][a_count] = round((np.max(conf_mat[1][:, j]) / np.sum(conf_mat[1][:, j])) * 100, 2)
+                else:
+                    homog_dps[1][j][a_count] = 0
+            homog_dps[0][0][a_count] = np.average(homog_dps[0][1:NUM_OF_CLUSTERS-1])
+            homog_dps[1][0][a_count] = np.average(homog_dps[1][1:NUM_OF_CLUSTERS-1])
+            a_count += 1
+
+        # Show progress with figures
+        if (i+1)%30001 == 0:
+            plt.close('all')
+            heatmap_majClust(conf_mat[0]); plt.title(str(homog_dps[0][0][a_count]) + "% Layered Average Homogeneity (using " + str(i + 1) + " examples)")
+            showCentroids(L_final.STAMs[0][0].centroids); plt.suptitle("Layered Centroids")
+            plt.figure()
+            heatmap_majClust(conf_mat[1]); plt.title(str(homog_dps[1][0][a_count]) + "% Single STAM Average Homogeneity (using " + str(i + 1) + " examples)")
+            showCentroids(L_single.STAMs[0][0].centroids); plt.suptitle("Single STAM Centroids")
+            plt.pause(0.005)
+            raw_input('Press Enter to exit')
+    return homog_dps, conf_mat
+
+
+div = 100
+L1 = Layer("L1", 7, 7, 0.005, centroids_init_shuff)
+L_final = Layer("L Final", 28, 28, 0.005, centroids_init_shuff)
+L_single = Layer("L Single", 28, 28, 0.005, centroids_init_shuff)
+homogen, conf_mat = getHomogeneity(L1, L_final, L_single, div)
+
+# Per Cluster Homogeneity Plots
+plt.figure()
+ax = plt.subplot(111)
+x_plot = np.linspace(div, x_train.shape[0], x_train.shape[0]/div)
+ax.plot(x_plot, homogen[0][0][:], label='Average')
+for i in range(NUM_OF_CLUSTERS):
+    plt.plot(x_plot, homogen[0][i][:], label='Clust ' + str(i))
+plt.title("Layered Per-Cluster Homogeneity");
+box = ax.get_position(); ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+plt.figure()
+heatmap_majClust(conf_mat[0]); plt.title(str(conf_mat[0][0][-1]) + "% Layered Average Homogeneity (using " + str(x_train.shape[0]) + " examples)")
+plt.show()
+
+plt.figure()
+ax = plt.subplot(111)
+x_plot = np.linspace(div, x_train.shape[0], x_train.shape[0]/div)
+ax.plot(x_plot, homogen[1][0][:], label='Average')
+for i in range(NUM_OF_CLUSTERS):
+    plt.plot(x_plot, homogen[1][i][:], label='Clust ' + str(i))
+plt.title("Single STAM Per-Cluster Homogeneity");
+box = ax.get_position(); ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+plt.figure()
+heatmap_majClust(conf_mat[1]); plt.title(str(conf_mat[1][0][-1]) + "% Single STAM Average Homogeneity (using " + str(x_train.shape[0]) + " examples)")
+plt.show()
 
 
 plt.pause(0.005)
