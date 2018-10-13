@@ -34,6 +34,7 @@ class Layer:
         #Create/Initialize the layer's STAMs... number of STAMs == number of receptive fields
         self.num_STAMs = int(np.power(np.floor((self.initCentroids[0].shape[0]-self.recField_size)/self.stride)+1, 2))
         self.STAMs = [[STAM(recField_size=self.recField_size, alpha=self.alpha) for j in range(int(np.sqrt(self.num_STAMs)))] for i in range(int(np.sqrt(self.num_STAMs)))]
+        self.num_converged = 0
 
         #Set all STAMs' initial centroid states
         self.set_initCentroids()
@@ -116,7 +117,8 @@ class Layer:
     def run_STAMs(self):
         for i in range(0, int(np.sqrt(self.num_STAMs))):
             for j in range(0, int(np.sqrt(self.num_STAMs))):
-                self.STAMs[i][j].get_output()
+                conv = self.STAMs[i][j].get_output()
+                self.num_converged += conv
 
     def append_centContrib(self, istart, iend, jstart, jend, cent):
         for i in range(istart, iend):
@@ -165,8 +167,21 @@ class Layer:
         self.get_output()
         #plt.figure()
         #plt.imshow(self.output_image); plt.title(self.name + " Layer Output Image")
-
         return
+
+    def converged(self):
+        if self.num_converged == self.num_STAMs:
+            return True
+        else:
+            return False
+
+    def unlock(self):
+        self.num_converged = 0
+        for i in range(0, int(np.sqrt(self.num_STAMs))):
+            for j in range(0, int(np.sqrt(self.num_STAMs))):
+                self.STAMs[i][j].prev_out = None
+                self.STAMs[i][j].locked_cent = None
+                self.STAMs[i][j].converged = False
 
     def test_output_construction(self, img):
         # This function's purpose is to test the functionality of the layer's output image. To do this, we pass an input
@@ -275,7 +290,6 @@ class Layer:
 
             plt.subplot(5, 2, k+1)
             plt.imshow(STAM_cents[k])
-
         return
 
 #The STAM Class
@@ -286,13 +300,23 @@ class STAM:
         self.input = np.zeros((self.rf_size , self.rf_size ))
         self.output = np.zeros((self.rf_size , self.rf_size ))
         self.output_cent = -1
+        self.prev_out = None
+        self.locked_cent = None
         self.centroids = np.zeros((NUM_OF_CLUSTERS, self.rf_size , self.rf_size ))
+        self.converged = False
         self.alpha = alpha
 
     def adjust_centroid(self, ind):
         self.centroids[ind] = (1 - self.alpha) * self.centroids[ind] + (self.alpha * self.input)
 
-    def get_output(self):
+    def get_output(self):   # Returns 1 if the STAM converged during this call, returns 0 otherwise
+        # Current assumption that once a STAM has converged, it's output is locked to the centroid it converged on, PREVIOUS TO ADJUSTMENT
+
+        # if already converged, output previous centroid
+        if self.converged:
+            self.output = self.locked_cent
+            return 0
+
         # find closest centroid
         smallest = float("inf")  # holds distance through iterations
         close_ind = -1          # index of the closest centroid
@@ -302,7 +326,14 @@ class STAM:
                 close_ind = i
         self.output = self.centroids[close_ind]
         self.output_cent = close_ind
-        self.adjust_centroid(close_ind)
+        if self.output_cent == self.prev_out:
+            self.locked_cent = self.centroids[close_ind]
+            self.adjust_centroid(close_ind)
+            self.converged = True
+            return 1
+        self.prev_out = self.output_cent
+
+        return 0
 
 
 #Init Methods for initial centroids
