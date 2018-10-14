@@ -2,18 +2,30 @@ from STAM_classRepo import *
 
 
 
+def showLayerInfo(l):
+    plt.close('all')
+    l.showInput()
+    l.showSTAMOutCents()
+    l.showConvergenceMat()
+    l.showOutput()
+
 def feedback(x, n, L1, L2):
     # x: original input image
     # n: number of feedback iterations
 
     L1.feed(x)
+    showLayerInfo(L1)
     L2.feed(L1.output_image)
+    showLayerInfo(L2)
     for i in range(n):
-        L1.feed(L2.output_image)
+        L1.feed(L2.output_image, feedback=True)
+        showLayerInfo(L1)
         if L1.converged():
             L1.unlock()
+            L2.unlock()
             return
-        L2.feed(L1.output_image)
+        L2.feed(L1.output_image, feedback=True)
+        showLayerInfo(L2)
     return
 
 '''

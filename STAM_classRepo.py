@@ -52,6 +52,20 @@ class Layer:
 
                 self.STAMs[i][j].input = self.input_image[startI:endI][:, startJ:endJ]
 
+    def set_STAM_x(self):
+        stride = self.stride
+        recField_size = self.recField_size
+
+        for i in range(0, int(np.sqrt(self.num_STAMs))):
+            for j in range(0, int(np.sqrt(self.num_STAMs))):
+                startI = i * stride
+                endI = i * stride + recField_size
+                startJ = j * stride
+                endJ = j * stride + recField_size
+
+                self.STAMs[i][j].x = self.input_image[startI:endI][:, startJ:endJ]
+                self.STAMs[i][j].input = self.input_image[startI:endI][:, startJ:endJ]
+
     def set_initCentroids(self):
         stride = self.stride
         recField_size = self.recField_size
@@ -111,7 +125,6 @@ class Layer:
         plt.title(self.name + " Receptive Fields")
         plt.axis('off')
         '''
-
         return
 
     def run_STAMs(self):
@@ -151,14 +164,17 @@ class Layer:
 
         self.output_image = np.round(self.output_image / count_image)
 
-    def feed(self, img):
+    def feed(self, img, feedback=False):
         #This function takes the input for the layer and performs all of the layer's tasks
 
         #set the layer's input image
         self.input_image = img
 
-        #Give each STAM its input
-        self.set_STAM_input()
+        #Give each STAM its input and/or set STAM.x
+        if feedback == False:
+            self.set_STAM_x()
+        else:
+            self.set_STAM_input()
         #plt.figure()
         #plt.imshow(self.input_image); plt.title(self.name + " Input Image")
         self.visualize_recFields("input")
@@ -182,6 +198,41 @@ class Layer:
                 self.STAMs[i][j].prev_out = None
                 self.STAMs[i][j].locked_cent = None
                 self.STAMs[i][j].converged = False
+
+    def showInput(self):
+        # Shows layer's input image
+        plt.figure()
+        plt.imshow(self.input_image); plt.title(self.name + " Input Image")
+
+    def showOutput(self):
+        # Shows layer's output image
+        plt.figure()
+        plt.imshow(self.output_image); plt.title(self.name + " Layer Output Image")
+
+    def showConvergenceMat(self):
+        # Shows a matrix in which each cell corresponds to a STAM in the layer
+        # 0: STAM hasn't converged
+        # 1: STAM has converged
+
+        converge_mat = np.zeros((int(np.sqrt(self.num_STAMs)), int(np.sqrt(self.num_STAMs))), int)
+        for i in range(0, int(np.sqrt(self.num_STAMs))):
+            for j in range(0, int(np.sqrt(self.num_STAMs))):
+                if self.STAMs[i][j].converged:
+                    converge_mat[i][j] = 1
+        plt.figure()
+        sn.heatmap(converge_mat, annot=True, fmt='g'); plt.title(self.name + " Convergence Matrix")
+
+    def showSTAMOutCents(self):
+        # This image shows which centroid was output by each STAM in the layer. Each cell corresponds to an individual STAM.
+        STAM_centsImg = np.zeros((int(np.sqrt(self.num_STAMs)), int(np.sqrt(self.num_STAMs))), int)
+        for i in range(int(np.sqrt(self.num_STAMs))):
+            for j in range(int(np.sqrt(self.num_STAMs))):
+                STAM_centsImg[i, j] = self.STAMs[i][j].output_cent
+
+        STAM_centsImg_df = pd.DataFrame(STAM_centsImg, range(STAM_centsImg.shape[0]), range(STAM_centsImg.shape[0]))
+        plt.figure()
+        sn.heatmap(STAM_centsImg_df, annot=True, fmt='g'); plt.title(self.name + " STAM Output Centroids")
+
 
     def test_output_construction(self, img):
         # This function's purpose is to test the functionality of the layer's output image. To do this, we pass an input
@@ -234,18 +285,7 @@ class Layer:
         # This function creates figures which attempt to make more obvious the centroids used by each STAM in the
         #   layer's output image.
         row_col = int(np.sqrt(self.num_STAMs))
-        STAM_centsImg = np.zeros((row_col, row_col))
         correct_centImg = np.full(self.output_image.shape, float('inf'))
-
-
-        # This image shows which centroid was used by each STAM in the layer. Each cell corresponds to an individual STAM.
-        for i in range(row_col):
-            for j in range(row_col):
-                STAM_centsImg[i, j] = self.STAMs[i][j].output_cent
-
-        STAM_centsImg_df = pd.DataFrame(STAM_centsImg, range(STAM_centsImg.shape[0]), range(STAM_centsImg.shape[0]))
-        plt.figure()
-        sn.heatmap(STAM_centsImg_df, annot=True, fmt='g')
 
         # This image shows the pixels in the ouput image that used the 'correct' centroid. If using 'majority',
         #   pixels are only shown if the correct centroid was used the most out of all that contributed to the
@@ -269,6 +309,8 @@ class Layer:
         return
 
     def construct_STAMCentroids(self):
+        # This function creates and displays an image which shows the current state of the STAM's centroids. Each
+        #   centroid is the reconstruction of all the layer's STAM's, just as the layer's output image is.
         STAM_cents = np.zeros((NUM_OF_CLUSTERS, self.input_image.shape[0], self.input_image.shape[1]), dtype=float)
         count_image = np.zeros((NUM_OF_CLUSTERS, self.input_image.shape[0], self.input_image.shape[1]))
         stride = self.stride
@@ -298,6 +340,7 @@ class STAM:
     def __init__(self, recField_size, alpha):
         self.rf_size = recField_size
         self.input = np.zeros((self.rf_size , self.rf_size ))
+        self.x = np.zeros((self.rf_size, self.rf_size))
         self.output = np.zeros((self.rf_size , self.rf_size ))
         self.output_cent = -1
         self.prev_out = None
@@ -307,7 +350,7 @@ class STAM:
         self.alpha = alpha
 
     def adjust_centroid(self, ind):
-        self.centroids[ind] = (1 - self.alpha) * self.centroids[ind] + (self.alpha * self.input)
+        self.centroids[ind] = (1 - self.alpha) * self.centroids[ind] + (self.alpha * self.x)
 
     def get_output(self):   # Returns 1 if the STAM converged during this call, returns 0 otherwise
         # Current assumption that once a STAM has converged, it's output is locked to the centroid it converged on, PREVIOUS TO ADJUSTMENT
