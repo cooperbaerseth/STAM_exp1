@@ -8,6 +8,8 @@ def showLayerInfo(l):
     l.showSTAMOutCents()
     l.showConvergenceMat()
     l.showOutput()
+    plt.pause(0.005)
+    raw_input('Press Enter to exit')
 
 def feedback(x, n, L1, L2):
     # x: original input image
