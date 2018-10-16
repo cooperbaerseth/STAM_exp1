@@ -209,7 +209,7 @@ class Layer:
         plt.figure()
         plt.imshow(self.output_image); plt.title(self.name + " Layer Output Image")
 
-    def showConvergenceMat(self):
+    def showConvergenceMat(self, get=False):
         # Shows a matrix in which each cell corresponds to a STAM in the layer
         # 0: STAM hasn't converged
         # 1: STAM has converged
@@ -219,7 +219,8 @@ class Layer:
             for j in range(0, int(np.sqrt(self.num_STAMs))):
                 if self.STAMs[i][j].converged:
                     converge_mat[i][j] = 1
-        plt.figure()
+        if not get:
+            plt.figure()
         sn.heatmap(converge_mat, annot=True, fmt='g'); plt.title(self.name + " Convergence Matrix")
 
     def showSTAMOutCents(self):
