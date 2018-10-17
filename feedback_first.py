@@ -24,6 +24,9 @@ def visualize(l1, l2, x, y, c2y, y_fb, c2y_fb):
     plt.imshow(c2y_fb); plt.title("c_2(Y) (after feedback)")
 
     plt.subplot2grid((4, 2), (3, 0), colspan=1, rowspan=1)
+    l1.showConvergenceImage(get=True); plt.title("Y Convergence")
+
+    plt.subplot2grid((4, 2), (3, 1), colspan=1, rowspan=1)
     l1.showConvergenceMat(get=True); plt.title("Y Convergence")
 
     fig.tight_layout()

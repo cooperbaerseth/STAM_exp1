@@ -223,6 +223,22 @@ class Layer:
             plt.figure()
         sn.heatmap(converge_mat, annot=True, fmt='g'); plt.title(self.name + " Convergence Matrix")
 
+    def showConvergenceImage(self, get=False):
+        # Shows a matrix in which each cell corresponds to a STAM in the layer
+        # 0: STAM hasn't converged
+        # 1: STAM has converged
+
+        rf = self.recField_size
+        n_stam_row = int(np.sqrt(self.num_STAMs))
+        converge_im = np.zeros(((n_stam_row * rf), (n_stam_row * rf)), int)
+        for i in range(0, n_stam_row):
+            for j in range(0, n_stam_row):
+                if self.STAMs[i][j].converged:
+                    converge_im[i*rf:i+rf][j*rf:j+rf] = 1
+        if not get:
+            plt.figure()
+        plt.imshow(converge_im); plt.title(self.name + " Convergence Image")
+
     def showSTAMOutCents(self):
         # This image shows which centroid was output by each STAM in the layer. Each cell corresponds to an individual STAM.
         STAM_centsImg = np.zeros((int(np.sqrt(self.num_STAMs)), int(np.sqrt(self.num_STAMs))), int)
