@@ -95,7 +95,7 @@ class Layer:
         for i in range(0, len(STAMs)):
             for j in range(0, len(STAMs[0])):
                 if pick == "input":
-                    recFields[count] = STAMs[i][j].input
+                    recFields[count] = STAMs[i][j].x
                 elif pick == "centroid":
                     recFields[count] = STAMs[i][j].centroids[cent]
                 count += 1
@@ -224,20 +224,40 @@ class Layer:
         sn.heatmap(converge_mat, annot=True, fmt='g'); plt.title(self.name + " Convergence Matrix")
 
     def showConvergenceImage(self, get=False):
-        # Shows a matrix in which each cell corresponds to a STAM in the layer
-        # 0: STAM hasn't converged
-        # 1: STAM has converged
+        # Shows an image in which pixels that have converged are 1, others are 0
 
         rf = self.recField_size
         n_stam_row = int(np.sqrt(self.num_STAMs))
-        converge_im = np.zeros(((n_stam_row * rf), (n_stam_row * rf)), int)
+        converge_im = np.ones(((n_stam_row * rf), (n_stam_row * rf)), int)
         for i in range(0, n_stam_row):
             for j in range(0, n_stam_row):
                 if self.STAMs[i][j].converged:
-                    converge_im[i*rf:i+rf][j*rf:j+rf] = 1
+                    iStart = i*rf
+                    iEnd = i*rf+rf
+                    jStart = j*rf
+                    jEnd = j*rf+rf
+                    converge_im[iStart:iEnd][:, jStart:jEnd] = 0
+        converge_im[converge_im.shape[0]-1][converge_im.shape[0]-1] = 1
+
         if not get:
             plt.figure()
         plt.imshow(converge_im); plt.title(self.name + " Convergence Image")
+
+    def get_XPrime(self):
+        # Shows an image in which the pixel that have converged are taken from X, and others are taken from Y (current iteration)
+
+        rf = self.recField_size
+        n_stam_row = int(np.sqrt(self.num_STAMs))
+        x_prime = np.copy(self.output_image)
+        for i in range(0, n_stam_row):
+            for j in range(0, n_stam_row):
+                if self.STAMs[i][j].converged:
+                    iStart = i*rf
+                    iEnd = i*rf+rf
+                    jStart = j*rf
+                    jEnd = j*rf+rf
+                    x_prime[iStart:iEnd][:, jStart:jEnd] = self.STAMs[i][j].x
+        return x_prime
 
     def showSTAMOutCents(self):
         # This image shows which centroid was output by each STAM in the layer. Each cell corresponds to an individual STAM.
