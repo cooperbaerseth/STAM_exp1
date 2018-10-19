@@ -164,6 +164,23 @@ class Layer:
 
         self.output_image = np.round(self.output_image / count_image)
 
+    def get_XPrime(self):
+        # Creates and returns an image in which the pixel that have converged are taken from X, and others are taken from Y (current iteration)
+
+        rf = self.recField_size
+        n_stam_row = int(np.sqrt(self.num_STAMs))
+        x_prime = np.copy(self.output_image)
+        for i in range(0, n_stam_row):
+            for j in range(0, n_stam_row):
+                if self.STAMs[i][j].converged:
+                    iStart = i*rf
+                    iEnd = i*rf+rf
+                    jStart = j*rf
+                    jEnd = j*rf+rf
+                    x_prime[iStart:iEnd][:, jStart:jEnd] = self.STAMs[i][j].x
+        self.x_prime = x_prime
+        return x_prime
+
     def feed(self, img, feedback=False):
         #This function takes the input for the layer and performs all of the layer's tasks
 
@@ -183,7 +200,17 @@ class Layer:
         self.get_output()
         #plt.figure()
         #plt.imshow(self.output_image); plt.title(self.name + " Layer Output Image")
+
+        #Construct x_prime if in feedback pass
+        if feedback:
+            self.get_XPrime()
+
         return
+
+    def push_feedback(self, x_prime):
+        for i in range(0, int(np.sqrt(self.num_STAMs))):
+            for j in range(0, int(np.sqrt(self.num_STAMs))):
+                self.STAMs[i][j].push_feedback(x_prime)
 
     def converged(self):
         if self.num_converged == self.num_STAMs:
@@ -208,6 +235,28 @@ class Layer:
         # Shows layer's output image
         plt.figure()
         plt.imshow(self.output_image); plt.title(self.name + " Layer Output Image")
+
+    def show_STAMCentroids(self, row, col):
+        # This function creates an image of the centroids of a particular STAM in the layer, denoted by row/col
+        cent_size = self.recField_size
+        border = 1
+        img = np.full((cent_size*5+border*5, cent_size*2+border*2), float('inf'))
+
+        count = 0
+        for i in range(5):
+            for j in range(2):
+                iStart = i * cent_size + (i*border)
+                iEnd = (i+1) * cent_size + (i*border)
+                jStart = j * cent_size + (j*border)
+                jEnd = (j+1) * cent_size + (j*border)
+
+                img[iStart:iEnd][:, jStart:jEnd] = self.STAMs[row][col].centroids[count]
+                count += 1
+
+        #plt.figure()
+        plt.imshow(img)
+
+        return
 
     def showConvergenceMat(self, get=False):
         # Shows a matrix in which each cell corresponds to a STAM in the layer
@@ -241,23 +290,7 @@ class Layer:
 
         if not get:
             plt.figure()
-        plt.imshow(converge_im); plt.title(self.name + " Convergence Image")
-
-    def get_XPrime(self):
-        # Shows an image in which the pixel that have converged are taken from X, and others are taken from Y (current iteration)
-
-        rf = self.recField_size
-        n_stam_row = int(np.sqrt(self.num_STAMs))
-        x_prime = np.copy(self.output_image)
-        for i in range(0, n_stam_row):
-            for j in range(0, n_stam_row):
-                if self.STAMs[i][j].converged:
-                    iStart = i*rf
-                    iEnd = i*rf+rf
-                    jStart = j*rf
-                    jEnd = j*rf+rf
-                    x_prime[iStart:iEnd][:, jStart:jEnd] = self.STAMs[i][j].x
-        return x_prime
+        plt.imshow(converge_im);
 
     def showSTAMOutCents(self):
         # This image shows which centroid was output by each STAM in the layer. Each cell corresponds to an individual STAM.
@@ -415,6 +448,10 @@ class STAM:
 
         return 0
 
+    def push_feedback(self, x_prime):
+        self.centroids[self.prev_out] = (1 - self.alpha) * self.centroids[self.prev_out] + (self.alpha * x_prime)
+
+
 
 #Init Methods for initial centroids
 def initCents_avg(centroids_initial, x_train, y_train, n):                   #if n = float("inf"), average all examples together
@@ -471,11 +508,12 @@ def initCents_close2avg(centroids_initial, x_train, y_train):
 
     return centroids_initial
 
-def initCents_pickRands(centroids, x_train, y_train):
+def initCents_pickRands(centroids, x_train, y_train, seed):
     n = 1
     cent_picks = np.zeros((10, n))  #will hold the random pick'th instance in sample
     tr_stat = plt.hist(y_train)     #get number of instances in each class
     plt.close('all')
+    random.seed(seed)
 
     #get indicies for random selection from train
     for i in range(0, 10):
@@ -521,11 +559,49 @@ def initCents_shuff(centroids_initial):
 
     return centroids_initial
 
+def initCents_randomHierarchy(l1_c, l2_c, x_train, y_train, n, l1_rf):
+
+    # L2 centroids are just "pick rands" cents
+    l2_cents = initCents_pickRands(l2_c, x_train, y_train, 77)
+
+    # L1 centroids
+    l1_cents = initCents_pickRands(l1_c, x_train, y_train, 8)
+
+    # # Pick random k centroids from each class
+    # tr_stat = plt.hist(y_train)     #get number of instances in each class
+    # plt.close('all')
+    # cent_picks = np.full((10, n), -1, int)
+    # count = np.zeros(10, int)
+    # while -1 in cent_picks:
+    #     pick = random.randint(0, y_train.shape[0])
+    #     if count[y_train[pick]] != n and pick not in cent_picks[y_train[pick]]:
+    #         cent_picks[y_train[pick], count[y_train[pick]]] = pick
+    #         count[y_train[pick]] += 1
+    #
+    # # Create L1 centroids
+    # l1_cents = np.zeros((10, 28, 28))
+    # for k in range(10):
+    #     for i in range(4):
+    #         for j in range(4):
+    #             iStart = i * l1_rf
+    #             iEnd = i * l1_rf + l1_rf
+    #             jStart = j * l1_rf
+    #             jEnd = j * l1_rf + l1_rf
+    #             pick = random.randint(0, n-1)
+    #             l1_cents[k][iStart:iEnd][jStart:jEnd] = x_train[cent_picks[k][pick]][iStart:iEnd][jStart:jEnd]
+    #
+    # for i in range(cent_picks.shape[0]):
+    #     for j in range(cent_picks.shape[1]):
+    #         print(y_train[cent_picks[i][j]], end='')
+    #     print('')
+
+    return l1_cents, l2_cents
+
 def showCentroids(centroids):
     plt.figure()
     for i in range(NUM_OF_CLUSTERS):
         plt.subplot(5, 2, i+1)
-        plt.imshow(centroids[i, :])
+        plt.imshow(centroids[i, :]); plt.axis('off')
 
     plt.pause(0.005)
     plt.show()
