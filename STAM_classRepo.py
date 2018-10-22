@@ -13,17 +13,18 @@ from matplotlib.patches import Rectangle
 
 plt.interactive(True)
 
-NUM_OF_CLUSTERS = 10            #the use of this variable will change a lot as we progress, but for now it is static during the program
+NUM_OF_CLUSTERS = 10            #the use of this variable will change value as we progress, but for now it is static during the program
 
 
 #The Layer Class
 class Layer:
 
-    def __init__(self, name, recField_size, stride, alpha, initCents):
+    def __init__(self, name, recField_size, stride, num_centroids, alpha, initCents):
         self.recField_size = recField_size
         self.stride = stride
         self.alpha = alpha
         self.name = name
+        self.num_centroids = num_centroids
 
         self.initCentroids = initCents      #this field should be unnecessary as we progress
 
@@ -33,7 +34,7 @@ class Layer:
 
         #Create/Initialize the layer's STAMs... number of STAMs == number of receptive fields
         self.num_STAMs = int(np.power(np.floor((self.initCentroids[0].shape[0]-self.recField_size)/self.stride)+1, 2))
-        self.STAMs = [[STAM(recField_size=self.recField_size, alpha=self.alpha) for j in range(int(np.sqrt(self.num_STAMs)))] for i in range(int(np.sqrt(self.num_STAMs)))]
+        self.STAMs = [[STAM(recField_size=self.recField_size, num_centroids=self.num_centroids, alpha=self.alpha) for j in range(int(np.sqrt(self.num_STAMs)))] for i in range(int(np.sqrt(self.num_STAMs)))]
         self.num_converged = 0
 
         #Set all STAMs' initial centroid states
@@ -72,7 +73,7 @@ class Layer:
 
         for i in range(0, int(np.sqrt(self.num_STAMs))):
             for j in range(0, int(np.sqrt(self.num_STAMs))):
-                for c in range(NUM_OF_CLUSTERS):
+                for c in range(self.num_centroids):
                     startI = i * stride
                     endI = i * stride + recField_size
                     startJ = j * stride
@@ -169,7 +170,13 @@ class Layer:
 
         rf = self.recField_size
         n_stam_row = int(np.sqrt(self.num_STAMs))
-        x_prime = np.copy(self.output_image)
+
+        # If x_prime is x where STAMs converged, and y_prime where STAMs didn't converge
+        # x_prime = np.copy(self.output_image)
+
+        # If x_prime is x where STAMs converged, and z where STAMs didn't converge
+        x_prime = (self.input_image + self.x)/2
+
         for i in range(0, n_stam_row):
             for j in range(0, n_stam_row):
                 if self.STAMs[i][j].converged:
@@ -189,6 +196,7 @@ class Layer:
 
         #Give each STAM its input and/or set STAM.x
         if feedback == False:
+            self.x = img
             self.set_STAM_x()
         else:
             self.set_STAM_input()
@@ -207,10 +215,10 @@ class Layer:
 
         return
 
-    def push_feedback(self, x_prime):
+    def adjustCent_feedback(self, x_prime):
         for i in range(0, int(np.sqrt(self.num_STAMs))):
             for j in range(0, int(np.sqrt(self.num_STAMs))):
-                self.STAMs[i][j].push_feedback(x_prime)
+                self.STAMs[i][j].adjustCent_feedback(x_prime)
 
     def converged(self):
         if self.num_converged == self.num_STAMs:
@@ -236,15 +244,21 @@ class Layer:
         plt.figure()
         plt.imshow(self.output_image); plt.title(self.name + " Layer Output Image")
 
-    def show_STAMCentroids(self, row, col):
+    def show_STAMCentroids(self, row, col, disp_row, disp_col):
         # This function creates an image of the centroids of a particular STAM in the layer, denoted by row/col
+
+        # If display values are incorrect, return error message
+        if disp_row*disp_col != self.num_centroids:
+            print("DISPLAY DIMENSIONS INCORRECT... PRODUCT MUST EQUAL " + str(self.num_centroids))
+            return
+
         cent_size = self.recField_size
         border = 1
-        img = np.full((cent_size*5+border*5, cent_size*2+border*2), float('inf'))
+        img = np.full((disp_row*(cent_size+border), disp_col*(cent_size+border)), float('inf'))
 
         count = 0
-        for i in range(5):
-            for j in range(2):
+        for i in range(disp_row):
+            for j in range(disp_col):
                 iStart = i * cent_size + (i*border)
                 iEnd = (i+1) * cent_size + (i*border)
                 jStart = j * cent_size + (j*border)
@@ -255,8 +269,6 @@ class Layer:
 
         #plt.figure()
         plt.imshow(img)
-
-        return
 
     def showConvergenceMat(self, get=False):
         # Shows a matrix in which each cell corresponds to a STAM in the layer
@@ -381,13 +393,13 @@ class Layer:
     def construct_STAMCentroids(self):
         # This function creates and displays an image which shows the current state of the STAM's centroids. Each
         #   centroid is the reconstruction of all the layer's STAM's, just as the layer's output image is.
-        STAM_cents = np.zeros((NUM_OF_CLUSTERS, self.input_image.shape[0], self.input_image.shape[1]), dtype=float)
-        count_image = np.zeros((NUM_OF_CLUSTERS, self.input_image.shape[0], self.input_image.shape[1]))
+        STAM_cents = np.zeros((self.num_centroids, self.input_image.shape[0], self.input_image.shape[1]), dtype=float)
+        count_image = np.zeros((self.num_centroids, self.input_image.shape[0], self.input_image.shape[1]))
         stride = self.stride
         recField_size = self.recField_size
 
         plt.figure()
-        for k in range(NUM_OF_CLUSTERS):
+        for k in range(self.num_centroids):
             for i in range(int(np.sqrt(self.num_STAMs))):
                 for j in range(int(np.sqrt(self.num_STAMs))):
                     startI = i * stride
@@ -407,7 +419,7 @@ class Layer:
 #The STAM Class
 class STAM:
 
-    def __init__(self, recField_size, alpha):
+    def __init__(self, recField_size, num_centroids, alpha):
         self.rf_size = recField_size
         self.input = np.zeros((self.rf_size , self.rf_size ))
         self.x = np.zeros((self.rf_size, self.rf_size))
@@ -415,7 +427,8 @@ class STAM:
         self.output_cent = -1
         self.prev_out = None
         self.locked_cent = None
-        self.centroids = np.zeros((NUM_OF_CLUSTERS, self.rf_size , self.rf_size ))
+        self.num_centroids = num_centroids
+        self.centroids = np.zeros((self.num_centroids, self.rf_size , self.rf_size ))
         self.converged = False
         self.alpha = alpha
 
@@ -433,7 +446,7 @@ class STAM:
         # find closest centroid
         smallest = float("inf")  # holds distance through iterations
         close_ind = -1          # index of the closest centroid
-        for i in range(NUM_OF_CLUSTERS):
+        for i in range(self.num_centroids):
             if np.linalg.norm(self.input.flatten() - self.centroids[i, :, :].flatten()) < smallest:
                 smallest = np.linalg.norm(self.input.flatten() - self.centroids[i, :, :].flatten())
                 close_ind = i
@@ -448,12 +461,13 @@ class STAM:
 
         return 0
 
-    def push_feedback(self, x_prime):
+    def adjustCent_feedback(self, x_prime):
         self.centroids[self.prev_out] = (1 - self.alpha) * self.centroids[self.prev_out] + (self.alpha * x_prime)
 
 
-
-#Init Methods for initial centroids
+###################################
+#INIT METHODS FOR CENTROIDS
+###################################
 def initCents_avg(centroids_initial, x_train, y_train, n):                   #if n = float("inf"), average all examples together
 
     if n == float("inf"):
@@ -510,7 +524,7 @@ def initCents_close2avg(centroids_initial, x_train, y_train):
 
 def initCents_pickRands(centroids, x_train, y_train, seed):
     n = 1
-    cent_picks = np.zeros((10, n))  #will hold the random pick'th instance in sample
+    cent_picks = np.zeros((NUM_OF_CLUSTERS, n))  #will hold the random pick'th instance in sample
     tr_stat = plt.hist(y_train)     #get number of instances in each class
     plt.close('all')
     random.seed(seed)
@@ -559,7 +573,7 @@ def initCents_shuff(centroids_initial):
 
     return centroids_initial
 
-def initCents_randomHierarchy(l1_c, l2_c, x_train, y_train, n, l1_rf):
+def initCents_randomK(l1_c, l2_c, x_train, y_train, n, l1_rf):
 
     # L2 centroids are just "pick rands" cents
     l2_cents = initCents_pickRands(l2_c, x_train, y_train, 77)
@@ -597,11 +611,64 @@ def initCents_randomHierarchy(l1_c, l2_c, x_train, y_train, n, l1_rf):
 
     return l1_cents, l2_cents
 
-def showCentroids(centroids):
+def initCents_randomHierarchy(n1, n2, x_train, y_train):
+    # This initialization populates the centroids variable with random examples from the training set
+    # n1: number of examples per class for layer 1
+    # n2: number of examples per class for layer 2
+
+    num_classes = max(y_train) + 1
+    l1_centroids = np.zeros((num_classes*n1, x_train[0].shape[0], x_train[0].shape[1]))
+    l2_centroids = np.zeros((num_classes*n2, x_train[0].shape[0], x_train[0].shape[1]))
+    l1_centInd = np.full((num_classes, n1), -1)
+    l1_centInd_filled = np.zeros(num_classes, int)
+    l2_centInd = np.full((num_classes, n2), -1)
+    l2_centInd_filled = np.zeros(num_classes, int)
+
+    # Pick l1 centroid indexes
+    filled = 0
+    while filled != num_classes*n1:
+        pick = random.randint(1, x_train.shape[0]-1)
+        while pick in l1_centInd[y_train[pick]] or l1_centInd_filled[y_train[pick]] == n1:
+            pick = random.randint(1, x_train.shape[0]-1)
+        l1_centInd[y_train[pick]][l1_centInd_filled[y_train[pick]]] = pick     # puts pick in the next open spot of pick's class row
+        l1_centInd_filled[y_train[pick]] += 1
+        filled += 1
+
+    # Pick l2 centroid indexes
+    filled = 0
+    while filled != num_classes*n2:
+        pick = random.randint(1, x_train.shape[0]-1)
+        while pick in l2_centInd[y_train[pick]] or pick in l1_centInd[y_train[pick]] or l2_centInd_filled[y_train[pick]] == n2:
+            pick = random.randint(1, x_train.shape[0]-1)
+        l2_centInd[y_train[pick]][l2_centInd_filled[y_train[pick]]] = pick     # puts pick in the next open spot of pick's class row
+        l2_centInd_filled[y_train[pick]] += 1
+        filled += 1
+
+    # populate l1 centroids with examples
+    ind = 0
+    for i in range(num_classes):
+        for j in range(n1):
+            l1_centroids[ind] = x_train[l1_centInd[i][j]]
+            ind += 1
+
+    # populate l2 centroids with examples
+    ind = 0
+    for i in range(num_classes):
+        for j in range(n2):
+            l2_centroids[ind] = x_train[l2_centInd[i][j]]
+            ind += 1
+
+    return l1_centroids, l2_centroids
+
+########################
+# MISC UTILITY FUNCTIONS
+########################
+def showInitCentroids(layer, rows, cols):
     plt.figure()
-    for i in range(NUM_OF_CLUSTERS):
-        plt.subplot(5, 2, i+1)
-        plt.imshow(centroids[i, :]); plt.axis('off')
+    for i in range(layer.num_centroids):
+        plt.subplot(rows, cols, i+1)
+        plt.imshow(layer.initCentroids[i, :]); plt.axis('off')
+    plt.suptitle(layer.name + " Initial Centroids")
 
     plt.pause(0.005)
     plt.show()
@@ -625,3 +692,46 @@ def multipage(filename, figs=None, dpi=200):
     for fig in figs:
         fig.savefig(pp, format='pdf')
     pp.close()
+
+def rf_split(layer, im):
+    STAMs = layer.STAMs
+    recFields = np.zeros((len(STAMs) * len(STAMs[0]), STAMs[0][0].input.shape[0], STAMs[0][0].input.shape[0]))
+    rf = layer.recField_size
+    border = 1
+    images_amount = recFields.shape[0]
+    row_amount = int(np.sqrt(images_amount))
+    col_amount = int(np.sqrt(images_amount))
+    image_height = recFields[0].shape[0]
+    image_width = recFields[0].shape[1]
+
+    # populate recFields matrix
+    count = 0
+    for i in range(0, len(STAMs)):
+        for j in range(0, len(STAMs)):
+            iStart = i * rf
+            iEnd = i * rf + rf
+            jStart = j * rf
+            jEnd = j * rf + rf
+            recFields[count] = im[iStart:iEnd][:, jStart:jEnd]
+            count += 1
+
+    all_filter_image = np.full((row_amount * image_height + border * row_amount,
+                                col_amount * image_width + border * col_amount), float('inf'))
+
+    for filter_num in range(images_amount):
+        start_row = image_height * (filter_num / col_amount) + \
+                    (filter_num / col_amount + 1) * border
+
+        end_row = start_row + image_height
+
+        start_col = image_width * (filter_num % col_amount) + \
+                    (filter_num % col_amount + 1) * border
+
+        end_col = start_col + image_width
+
+        all_filter_image[start_row:end_row, start_col:end_col] = \
+            recFields[filter_num]
+
+    plt.imshow(all_filter_image)
+
+    return all_filter_image
