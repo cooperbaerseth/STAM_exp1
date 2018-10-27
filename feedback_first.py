@@ -8,7 +8,7 @@ def visualize(l1, l2, x, y, z, y_fb, z_prime):
     gridspec.GridSpec(2, 4)
 
     plt.subplot2grid((2, 4), (0, 0))
-    l1.show_STAMCentroids(2, 2, 5, 4); plt.axis('off')
+    l1.show_STAMCentroids(7, 7, 5, 4); plt.axis('off')
     #plt.imshow(x); plt.title("X"); plt.axis('off')
 
     plt.subplot2grid((2, 4), (0, 1))
@@ -74,7 +74,7 @@ l1_centroids_init_rands, l2_centroids_init_rands = initCents_randomHierarchy(l1_
 # l1 = Layer("L1", 7, 7, 0.005, centroids_init_c2avg)
 # l2 = Layer("L2", 28, 28, 0.5, centroids_init_c2avg)
 
-l1 = Layer("L1", 7, 7, 10*l1_perClass, 0.005, l1_centroids_init_rands)
+l1 = Layer("L1", 4, 2, 10*l1_perClass, 0.005, l1_centroids_init_rands)
 l2 = Layer("L2", 28, 28, 10*l2_perClass, 0.005, l2_centroids_init_rands)
 
 showInitCentroids(l1, 5, 4)

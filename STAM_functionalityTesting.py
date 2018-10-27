@@ -400,7 +400,7 @@ initCents_close2avg()
 #feed_centroid(L1, 8)
 
 # Show content of layer's output image with respect to STAM centroids
-L1 = Layer(6, 2, 0.005, centroids_initial)
+L1 = Layer(4, 2, 0.005, centroids_initial)
 #L1 = Layer(7, 7, 0.05, centroids_initial)
 m = True
 for i in range(x_train.shape[0]):

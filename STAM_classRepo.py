@@ -82,6 +82,10 @@ class Layer:
                     self.STAMs[i][j].centroids[c] = self.initCentroids[c, startI:endI, startJ:endJ]
 
     def visualize_recFields(self, pick, cent=-1):
+        # When pick = 'input', this function creates an image showing the receptive fields of this layer's STAMs
+        # When pick = 'centroid', this function creates an image showing the receptive fields of a selected centroid from this layer
+        #   ...can be called at any time after input is given to layer
+
         STAMs = self.STAMs
         recFields = np.zeros((len(STAMs)*len(STAMs[0]), STAMs[0][0].input.shape[0], STAMs[0][0].input.shape[0]))
         border = 2
@@ -157,8 +161,6 @@ class Layer:
                 startJ = j * stride
                 endJ = j * stride + recField_size
 
-                #print("endI: " + str(endI) + "\nendJ: " + str(endJ) + "\n")
-
                 self.output_image[startI:endI][:, startJ:endJ] += self.STAMs[i][j].output
                 count_image[startI:endI][:, startJ:endJ] += 1
                 self.append_centContrib(startI, endI, startJ, endJ, self.STAMs[i][j].output_cent)
@@ -166,24 +168,25 @@ class Layer:
         self.output_image = np.round(self.output_image / count_image)
 
     def get_XPrime(self):
-        # Creates and returns an image in which the pixel that have converged are taken from X, and others are taken from Y (current iteration)
+        # Creates and returns the x prime image
 
         rf = self.recField_size
+        st = self.stride
         n_stam_row = int(np.sqrt(self.num_STAMs))
 
         # If x_prime is x where STAMs converged, and y_prime where STAMs didn't converge
         # x_prime = np.copy(self.output_image)
 
-        # If x_prime is x where STAMs converged, and z where STAMs didn't converge
+        # If x_prime is x where STAMs converged, and x averaged with z where STAMs didn't converge
         x_prime = (self.input_image + self.x)/2
 
         for i in range(0, n_stam_row):
             for j in range(0, n_stam_row):
                 if self.STAMs[i][j].converged:
-                    iStart = i*rf
-                    iEnd = i*rf+rf
-                    jStart = j*rf
-                    jEnd = j*rf+rf
+                    iStart = i*st
+                    iEnd = i*st+rf
+                    jStart = j*st
+                    jEnd = j*st+rf
                     x_prime[iStart:iEnd][:, jStart:jEnd] = self.STAMs[i][j].x
         self.x_prime = x_prime
         return x_prime
@@ -200,14 +203,9 @@ class Layer:
             self.set_STAM_x()
         else:
             self.set_STAM_input()
-        #plt.figure()
-        #plt.imshow(self.input_image); plt.title(self.name + " Input Image")
-        self.visualize_recFields("input")
 
         #Create layer's output image
         self.get_output()
-        #plt.figure()
-        #plt.imshow(self.output_image); plt.title(self.name + " Layer Output Image")
 
         #Construct x_prime if in feedback pass
         if feedback:
@@ -452,7 +450,7 @@ class STAM:
                 close_ind = i
         self.output = self.centroids[close_ind]
         self.output_cent = close_ind
-        if self.output_cent == self.prev_out:
+        if self.output_cent == self.prev_out:               # output_cent initialized as -1, so on input will always != prev_out
             self.locked_cent = self.centroids[close_ind]
             self.adjust_centroid(close_ind)
             self.converged = True
@@ -578,36 +576,33 @@ def initCents_randomK(l1_c, l2_c, x_train, y_train, n, l1_rf):
     # L2 centroids are just "pick rands" cents
     l2_cents = initCents_pickRands(l2_c, x_train, y_train, 77)
 
-    # L1 centroids
-    l1_cents = initCents_pickRands(l1_c, x_train, y_train, 8)
+    # Pick random k centroids from each class
+    tr_stat = plt.hist(y_train)     #get number of instances in each class
+    plt.close('all')
+    cent_picks = np.full((10, n), -1, int)
+    count = np.zeros(10, int)
+    while -1 in cent_picks:
+        pick = random.randint(0, y_train.shape[0])
+        if count[y_train[pick]] != n and pick not in cent_picks[y_train[pick]]:
+            cent_picks[y_train[pick], count[y_train[pick]]] = pick
+            count[y_train[pick]] += 1
 
-    # # Pick random k centroids from each class
-    # tr_stat = plt.hist(y_train)     #get number of instances in each class
-    # plt.close('all')
-    # cent_picks = np.full((10, n), -1, int)
-    # count = np.zeros(10, int)
-    # while -1 in cent_picks:
-    #     pick = random.randint(0, y_train.shape[0])
-    #     if count[y_train[pick]] != n and pick not in cent_picks[y_train[pick]]:
-    #         cent_picks[y_train[pick], count[y_train[pick]]] = pick
-    #         count[y_train[pick]] += 1
-    #
-    # # Create L1 centroids
-    # l1_cents = np.zeros((10, 28, 28))
-    # for k in range(10):
-    #     for i in range(4):
-    #         for j in range(4):
-    #             iStart = i * l1_rf
-    #             iEnd = i * l1_rf + l1_rf
-    #             jStart = j * l1_rf
-    #             jEnd = j * l1_rf + l1_rf
-    #             pick = random.randint(0, n-1)
-    #             l1_cents[k][iStart:iEnd][jStart:jEnd] = x_train[cent_picks[k][pick]][iStart:iEnd][jStart:jEnd]
-    #
-    # for i in range(cent_picks.shape[0]):
-    #     for j in range(cent_picks.shape[1]):
-    #         print(y_train[cent_picks[i][j]], end='')
-    #     print('')
+    # Create L1 centroids
+    l1_cents = np.zeros((10, 28, 28))
+    for k in range(10):
+        for i in range(4):
+            for j in range(4):
+                iStart = i * l1_rf
+                iEnd = i * l1_rf + l1_rf
+                jStart = j * l1_rf
+                jEnd = j * l1_rf + l1_rf
+                pick = random.randint(0, n-1)
+                l1_cents[k][iStart:iEnd][jStart:jEnd] = x_train[cent_picks[k][pick]][iStart:iEnd][jStart:jEnd]
+
+    for i in range(cent_picks.shape[0]):
+        for j in range(cent_picks.shape[1]):
+            print(y_train[cent_picks[i][j]], end='')
+        print('')
 
     return l1_cents, l2_cents
 
@@ -697,6 +692,7 @@ def rf_split(layer, im):
     STAMs = layer.STAMs
     recFields = np.zeros((len(STAMs) * len(STAMs[0]), STAMs[0][0].input.shape[0], STAMs[0][0].input.shape[0]))
     rf = layer.recField_size
+    st = layer.stride
     border = 1
     images_amount = recFields.shape[0]
     row_amount = int(np.sqrt(images_amount))
@@ -708,10 +704,10 @@ def rf_split(layer, im):
     count = 0
     for i in range(0, len(STAMs)):
         for j in range(0, len(STAMs)):
-            iStart = i * rf
-            iEnd = i * rf + rf
-            jStart = j * rf
-            jEnd = j * rf + rf
+            iStart = i * st
+            iEnd = i * st + rf
+            jStart = j * st
+            jEnd = j * st + rf
             recFields[count] = im[iStart:iEnd][:, jStart:jEnd]
             count += 1
 
